@@ -45,17 +45,13 @@ Or use [WebOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) if 
 
 ### Step 2 — Export your chiaki-ng registration
 
-Chiaki-lg does not handle PS5 registration itself. You must have already registered with your PS5 using [chiaki-ng](https://github.com/streetpea/chiaki-ng) on Windows or Linux. This is a one-time step.
+Chiaki-lg does not handle PS5 registration itself. You must have already registered with your PS5 using [chiaki-ng](https://github.com/streetpea/chiaki-ng) on Windows, Linux, MacOS. This is a one-time step.
 
-**On Windows:**
+**On Computer (Win/Linux/MacOS):**
 1. Open chiaki-ng
-2. Go to **Settings → Config → Export Settings To File** (or locate the config directly at `%APPDATA%\Roaming\Chiaki\Chiaki.conf`)
-3. Copy that file and rename it `chiaki-ng-Default.ini` if needed
+2. Go to **Settings → Config → Export Settings To File**
+3. Copy/use that file and rename it `chiaki-ng-Default.ini` if needed
 
-**On Linux:**
-```bash
-cp ~/.config/Chiaki/Chiaki.conf ~/chiaki-ng-Default.ini
-```
 
 ### Step 3 — Copy the file to the TV
 
