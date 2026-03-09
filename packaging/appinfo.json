@@ -1,0 +1,23 @@
+{
+  "id": "org.homebrew.chiaki",
+  "type": "native",
+  "main": "chiaki-webos",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "title": "Chiaki-lg",
+  "appDescription": "PlayStation Remote Play (PS4 / PS5)",
+  "bgColor": "#00439C",
+  "iconColor": "#00439C",
+  "splashColor": "#00439C",
+  "version": "0.1.0",
+  "vendor": "chiaki-ng",
+  "vendorUrl": "https://github.com/streetpea/chiaki-ng",
+  "resolution": "1920x1080",
+  "transparent": false,
+  "requiredPermissions": [
+    "audio",
+    "video.capture",
+    "network.http",
+    "network.https"
+  ]
+}
