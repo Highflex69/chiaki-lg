@@ -11,30 +11,70 @@
 
 #include "config_import.h"
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+/* ── Layout ──────────────────────────────────────────────────────────────────
+ * Two-panel layout:
+ *   Header band (full width, top)
+ *   Left  panel — step guide + instructions
+ *   Right panel — IP input + action buttons / keypad
+ *   Status row  — config state pills
+ *   Footer bar  — navigation hints
+ */
 
 #define SCREEN_W    1920
 #define SCREEN_H    1080
-#define CARD_X      280
-#define CARD_Y      160
-#define CARD_W      1360
-#define CARD_H      760
-#define CARD_PAD    60
-#define CORNER_R    18
 
-// ── Colours (R,G,B,A) ─────────────────────────────────────────────────────────
+/* Header */
+#define HDR_Y       24
+#define HDR_H       72
 
-#define COL_BG          0x0d, 0x0d, 0x0d, 0xff
-#define COL_CARD        0x1a, 0x1a, 0x2e, 0xff
-#define COL_ACCENT      0x00, 0x37, 0x91, 0xff   // PlayStation blue
-#define COL_BORDER      0x22, 0x22, 0x3a, 0xff
-#define COL_TEXT        0xff, 0xff, 0xff, 0xff
-#define COL_TEXT_DIM    0x99, 0x99, 0xbb, 0xff
-#define COL_TEXT_FAINT  0x55, 0x55, 0x77, 0xff
-#define COL_CODE_BG     0x11, 0x11, 0x22, 0xff
-#define COL_CODE_TEXT   0x7e, 0xc8, 0xe3, 0xff   // light blue for code
+/* Content panels (below header) */
+#define CONTENT_Y   (HDR_Y + HDR_H + 20)   /* 116 */
+#define CONTENT_H   724
 
-// ── Minimal 5×7 pixel font (printable ASCII 0x20–0x7e) ───────────────────────
+#define LEFT_X      60
+#define LEFT_W      680
+#define DIVIDER_X   (LEFT_X + LEFT_W + 12)
+#define RIGHT_X     (DIVIDER_X + 12)
+#define RIGHT_W     (SCREEN_W - RIGHT_X - 60)
+
+/* Footer */
+#define FOOTER_Y    (CONTENT_Y + CONTENT_H + 22)   /* 862 */
+#define FOOTER_H    62
+
+/* ── Colour palette (R,G,B,A) ─────────────────────────────────────────────── */
+
+/* Backgrounds */
+#define COL_BG              0x04, 0x07, 0x12, 0xff   /* deep navy */
+#define COL_BG_DEEPER       0x02, 0x04, 0x0c, 0xff   /* header overlay */
+#define COL_PANEL           0x09, 0x11, 0x28, 0xff   /* panels / footer */
+#define COL_ELEVATED        0x0d, 0x17, 0x32, 0xff   /* right panel */
+#define COL_CARD            0x14, 0x20, 0x44, 0xff   /* button / input BG */
+#define COL_CODE_BG         0x07, 0x0e, 0x22, 0xff   /* code block BG */
+
+/* Accent */
+#define COL_ACCENT          0x00, 0x72, 0xff, 0xff   /* PlayStation blue */
+#define COL_ACCENT_MID      0x00, 0x48, 0xc0, 0xff
+#define COL_ACCENT_DARK     0x00, 0x2e, 0x82, 0xff
+
+/* Semantic */
+#define COL_SUCCESS         0x00, 0xb8, 0x58, 0xff
+#define COL_SUCCESS_BG      0x00, 0x28, 0x14, 0xff
+#define COL_WARNING         0xf8, 0x9c, 0x1c, 0xff
+#define COL_WARNING_BG      0x30, 0x1e, 0x04, 0xff
+#define COL_ERROR           0xff, 0x44, 0x50, 0xff
+#define COL_ERROR_BG        0x30, 0x08, 0x0c, 0xff
+
+/* Borders */
+#define COL_BORDER          0x1c, 0x2c, 0x58, 0xff
+#define COL_BORDER_DIM      0x10, 0x18, 0x36, 0xff
+
+/* Text */
+#define COL_TEXT            0xec, 0xf2, 0xff, 0xff
+#define COL_TEXT_DIM        0x78, 0x8c, 0xb8, 0xff
+#define COL_TEXT_FAINT      0x3c, 0x4c, 0x78, 0xff
+#define COL_TEXT_CODE       0x48, 0xcc, 0xff, 0xff
+
+/* ── Minimal 5×7 pixel font (printable ASCII 0x20–0x7e) ──────────────────── */
 
 static const uint8_t FONT_DATA[][5] = {
     {0x00,0x00,0x00,0x00,0x00}, // 0x20 space
@@ -134,7 +174,7 @@ static const uint8_t FONT_DATA[][5] = {
     {0x10,0x08,0x08,0x10,0x08}, // ~
 };
 
-// ── Drawing helpers ───────────────────────────────────────────────────────────
+/* ── Primitive drawing helpers ───────────────────────────────────────────── */
 
 static void set_color(SDL_Renderer *r, int R, int G, int B, int A)
 {
@@ -145,6 +185,12 @@ static void fill_rect(SDL_Renderer *r, int x, int y, int w, int h)
 {
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderFillRect(r, &rect);
+}
+
+static void draw_rect_outline(SDL_Renderer *r, int x, int y, int w, int h)
+{
+    SDL_Rect rect = {x, y, w, h};
+    SDL_RenderDrawRect(r, &rect);
 }
 
 static void draw_glyph(SDL_Renderer *r, int x, int y, uint8_t ch, int scale)
@@ -160,8 +206,7 @@ static void draw_glyph(SDL_Renderer *r, int x, int y, uint8_t ch, int scale)
 static void draw_text(SDL_Renderer *r, int x, int y, const char *text, int scale)
 {
     int ox = x;
-    for (const char *p = text; *p; p++)
-    {
+    for (const char *p = text; *p; p++) {
         if (*p == '\n') { x = ox; y += 9 * scale; continue; }
         draw_glyph(r, x, y, (uint8_t)*p, scale);
         x += 6 * scale;
@@ -182,11 +227,22 @@ static void draw_text_centered(SDL_Renderer *r, int cx, int y,
     draw_text(r, cx - text_width(text, scale) / 2, y, text, scale);
 }
 
+/* Rounded rect — two overlapping bars forming a cross with clipped corners */
 static void fill_rounded_rect(SDL_Renderer *r, int x, int y, int w, int h, int radius)
 {
+    if (radius * 2 >= w) radius = w / 2 - 1;
+    if (radius * 2 >= h) radius = h / 2 - 1;
     fill_rect(r, x + radius, y,          w - radius * 2, h);
     fill_rect(r, x,          y + radius, w,              h - radius * 2);
 }
+
+/* Filled horizontal line (1px tall) */
+static void hline(SDL_Renderer *r, int x, int y, int w)
+{
+    fill_rect(r, x, y, w, 1);
+}
+
+/* ── Code block ─────────────────────────────────────────────────────────── */
 
 static void draw_code_block(SDL_Renderer *r, int x, int y, int w,
                              const char *text, int scale)
@@ -197,234 +253,507 @@ static void draw_code_block(SDL_Renderer *r, int x, int y, int w,
 
     set_color(r, COL_CODE_BG);
     fill_rounded_rect(r, x, y, w, h, 8);
-
-    set_color(r, COL_ACCENT);
+    set_color(r, COL_ACCENT_DARK);
     fill_rect(r, x, y, 4, h);
-
-    set_color(r, COL_CODE_TEXT);
-    draw_text(r, x + 18, y + 10, text, scale);
+    set_color(r, COL_TEXT_CODE);
+    draw_text(r, x + 16, y + 10, text, scale);
 }
 
-// ── Main screen renderer ──────────────────────────────────────────────────────
+/* ── Step progress badge ────────────────────────────────────────────────── */
+
+/* Draw a single numbered step badge (44×44) at top-left corner (bx, by).
+ * done   = step completed  → green fill, "OK" label
+ * active = current step    → blue fill, white number
+ * else   = future step     → dim border, dim number
+ */
+static void draw_step_badge(SDL_Renderer *r, int bx, int by, int size,
+                             int num, bool done, bool active)
+{
+    int radius = size / 5;
+
+    /* Badge fill */
+    if (done) {
+        set_color(r, COL_SUCCESS);
+    } else if (active) {
+        set_color(r, COL_ACCENT);
+    } else {
+        set_color(r, COL_BORDER_DIM);
+    }
+    fill_rounded_rect(r, bx, by, size, size, radius);
+
+    /* Inner border highlight for active */
+    if (active) {
+        set_color(r, 0x40, 0x90, 0xff, 0xff);
+        fill_rounded_rect(r, bx + 2, by + 2, size - 4, size - 4, radius - 1);
+        set_color(r, COL_ACCENT);
+        fill_rounded_rect(r, bx + 3, by + 3, size - 6, size - 6, radius - 2);
+    }
+
+    /* Content text — vertically centred */
+    int text_y = by + (size - 14) / 2;  /* 14 = 7 * scale2 */
+    if (done) {
+        set_color(r, 0x00, 0x20, 0x0c, 0xff);
+        draw_text_centered(r, bx + size / 2, text_y, "OK", 2);
+    } else {
+        set_color(r, active ? COL_TEXT : COL_TEXT_FAINT);
+        char s[2] = { '0' + (char)num, '\0' };
+        draw_text_centered(r, bx + size / 2, text_y, s, 2);
+    }
+}
+
+/* ── Status pill ────────────────────────────────────────────────────────── */
+
+static int draw_status_pill(SDL_Renderer *r, int x, int y,
+                             const char *label, bool ok)
+{
+    int tw = text_width(label, 2);
+    int pw = tw + 28;
+    int ph = 34;
+
+    if (ok) {
+        set_color(r, COL_SUCCESS_BG);
+        fill_rounded_rect(r, x, y, pw, ph, ph / 2);
+        set_color(r, COL_SUCCESS);
+        fill_rect(r, x + 6, y + ph/2 - 1, 8, 2);  /* mini tick left */
+        draw_text(r, x + 18, y + (ph - 14) / 2, label, 2);
+    } else {
+        set_color(r, COL_ERROR_BG);
+        fill_rounded_rect(r, x, y, pw, ph, ph / 2);
+        set_color(r, COL_ERROR);
+        draw_text(r, x + 14, y + (ph - 14) / 2, label, 2);
+    }
+    return pw + 12;
+}
+
+/* ── Button ─────────────────────────────────────────────────────────────── */
 
 static void draw_button(SDL_Renderer *r, int x, int y, int w, int h,
                         const char *label, bool focused, bool enabled)
 {
+    int radius = 10;
+    int text_y = y + (h - 14) / 2;
+
     if (!enabled) {
-        set_color(r, COL_BORDER);
-        fill_rounded_rect(r, x, y, w, h, 10);
+        /* Disabled — very faint */
+        set_color(r, COL_BORDER_DIM);
+        fill_rounded_rect(r, x, y, w, h, radius);
         set_color(r, COL_TEXT_FAINT);
-        draw_text_centered(r, x + w/2, y + (h/2) - 9, label, 2);
+        draw_text_centered(r, x + w / 2, text_y, label, 2);
         return;
     }
 
     if (focused) {
+        /* Focused — solid accent fill with subtle top highlight */
         set_color(r, COL_ACCENT);
-        fill_rounded_rect(r, x, y, w, h, 10);
+        fill_rounded_rect(r, x, y, w, h, radius);
+        /* Subtle top sheen */
+        set_color(r, 0x40, 0x90, 0xff, 0xff);
+        fill_rounded_rect(r, x + 2, y + 2, w - 4, h / 3, radius - 1);
+        set_color(r, COL_ACCENT);
+        fill_rounded_rect(r, x + 2, y + h / 4, w - 4, h / 2, radius - 1);
+        /* White text */
         set_color(r, COL_TEXT);
-        draw_text_centered(r, x + w/2, y + (h/2) - 9, label, 2);
+        draw_text_centered(r, x + w / 2, text_y, label, 2);
+        /* Bottom accent line */
+        set_color(r, 0x60, 0xa8, 0xff, 0xff);
+        hline(r, x + radius, y + h - 3, w - radius * 2);
     } else {
-        set_color(r, COL_CODE_BG);
-        fill_rounded_rect(r, x, y, w, h, 10);
+        /* Normal enabled */
+        set_color(r, COL_CARD);
+        fill_rounded_rect(r, x, y, w, h, radius);
         set_color(r, COL_BORDER);
-        SDL_Rect rr = {x, y, w, h};
-        SDL_RenderDrawRect(r, &rr);
+        draw_rect_outline(r, x, y, w, h);
         set_color(r, COL_TEXT);
-        draw_text_centered(r, x + w/2, y + (h/2) - 9, label, 2);
+        draw_text_centered(r, x + w / 2, text_y, label, 2);
     }
 }
+
+/* ── Input box ──────────────────────────────────────────────────────────── */
 
 static void draw_input_box(SDL_Renderer *r, int x, int y, int w, int h,
                            const char *text, int cursor, bool focused)
 {
-    set_color(r, COL_CODE_BG);
-    fill_rounded_rect(r, x, y, w, h, 10);
+    int radius = 10;
 
-    if (focused) set_color(r, COL_ACCENT);
-    else         set_color(r, COL_BORDER);
-    SDL_Rect rr = {x, y, w, h};
-    SDL_RenderDrawRect(r, &rr);
+    /* Background */
+    set_color(r, COL_CODE_BG);
+    fill_rounded_rect(r, x, y, w, h, radius);
+
+    /* Border — thicker + brighter when focused */
+    if (focused) {
+        set_color(r, COL_ACCENT);
+        draw_rect_outline(r, x,     y,     w,     h);
+        draw_rect_outline(r, x + 1, y + 1, w - 2, h - 2);
+    } else {
+        set_color(r, COL_BORDER);
+        draw_rect_outline(r, x, y, w, h);
+    }
 
     int scale = 3;
-    int tx = x + 18;
-    int ty = y + (h - (7 * scale)) / 2;
+    int ty = y + (h - 7 * scale) / 2;
+    int tx = x + 20;
 
     if (text && text[0]) {
-        set_color(r, COL_CODE_TEXT);
+        set_color(r, COL_TEXT);
         draw_text(r, tx, ty, text, scale);
     } else {
         set_color(r, COL_TEXT_FAINT);
-        draw_text(r, tx, ty, "192.168.1.50", scale);
+        draw_text(r, tx, ty, "192.168.x.x", scale);
     }
 
+    /* Blinking cursor */
     if (focused && ((SDL_GetTicks() / 500) % 2) == 0) {
         int cx = tx + cursor * (6 * scale);
         set_color(r, COL_TEXT);
-        draw_text(r, cx, ty, "|", scale);
+        fill_rect(r, cx, ty, 2, 7 * scale);
     }
 }
+
+/* ── Setup screen ───────────────────────────────────────────────────────── */
 
 static void render_setup_screen(SDL_Renderer *r, const char *status,
                                 const char *ip, int focus,
                                 const char *msg,
+                                bool has_keys,
                                 bool can_import,
                                 bool can_connect,
                                 bool show_keypad)
 {
-    int cx = SCREEN_W / 2;
+    /* Determine current step (1-3) for progress display */
+    int step;
+    if (can_connect)        step = 3;   /* everything ready */
+    else if (has_keys)      step = 2;   /* have keys, need valid IP */
+    else                    step = 1;   /* need keys first */
 
-    // Background
+    /* ── Background ──────────────────────────────────────────────────────── */
     set_color(r, COL_BG);
     fill_rect(r, 0, 0, SCREEN_W, SCREEN_H);
 
-    // Card
-    set_color(r, COL_CARD);
-    fill_rounded_rect(r, CARD_X, CARD_Y, CARD_W, CARD_H, CORNER_R);
+    /* Very top vignette */
+    set_color(r, COL_BG_DEEPER);
+    fill_rect(r, 0, 0, SCREEN_W, 60);
 
-    // Accent bar at top of card
+    /* ── Header band ─────────────────────────────────────────────────────── */
+    set_color(r, COL_PANEL);
+    fill_rect(r, 0, HDR_Y, SCREEN_W, HDR_H);
+
+    /* Bottom border of header */
+    set_color(r, COL_BORDER_DIM);
+    hline(r, 0, HDR_Y + HDR_H - 1, SCREEN_W);
+
+    /* Left PS blue accent bar */
     set_color(r, COL_ACCENT);
-    fill_rect(r, CARD_X, CARD_Y, CARD_W, 6);
+    fill_rect(r, 0, HDR_Y, 8, HDR_H);
 
-    // Title
+    /* App name */
     set_color(r, COL_TEXT);
-    draw_text_centered(r, cx, CARD_Y + 36, "Chiaki - Connect", 3);
+    draw_text(r, 36, HDR_Y + 10, "CHIAKI", 4);
 
-    // Divider
-    set_color(r, COL_BORDER);
-    fill_rect(r, CARD_X + CARD_PAD, CARD_Y + 80, CARD_W - CARD_PAD * 2, 1);
-
-    int fx = CARD_X + CARD_PAD;
-    int fy = CARD_Y + 104;
-
+    /* Subtitle */
     set_color(r, COL_TEXT_DIM);
-    draw_text(r, fx, fy, "Import chiaki-ng config + connect", 2);
+    draw_text(r, 36, HDR_Y + 50, "PS5 Remote Play for webOS", 2);
 
+    /* Right side: connection readiness */
+    if (can_connect) {
+        char ps5str[80];
+        snprintf(ps5str, sizeof(ps5str), "PS5:  %s", ip ? ip : "");
+        int sw = text_width(ps5str, 2);
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, SCREEN_W - sw - 48, HDR_Y + 14, ps5str, 2);
+        set_color(r, COL_SUCCESS);
+        draw_text(r, SCREEN_W - text_width("Ready to connect", 2) - 48,
+                  HDR_Y + 42, "Ready to connect", 2);
+    } else {
+        set_color(r, COL_TEXT_FAINT);
+        draw_text(r, SCREEN_W - text_width("Setup required", 2) - 48,
+                  HDR_Y + 28, "Setup required", 2);
+    }
+
+    /* ── Left panel ──────────────────────────────────────────────────────── */
+    set_color(r, COL_PANEL);
+    fill_rounded_rect(r, LEFT_X, CONTENT_Y, LEFT_W, CONTENT_H, 14);
+
+    /* Left accent strip */
+    set_color(r, COL_ACCENT_DARK);
+    fill_rect(r, LEFT_X, CONTENT_Y + 14, 4, CONTENT_H - 28);
     set_color(r, COL_ACCENT);
-    draw_text(r, fx, fy + 34, "1. Copy chiaki-ng-Default.ini to the TV", 2);
-    set_color(r, COL_TEXT_DIM);
-    draw_text(r, fx, fy + 56, "Export/copy it from chiaki-ng on your PC, then push it to the TV using ADB or WebOS Dev Manager", 2);
-    draw_code_block(r, fx, fy + 78, CARD_W - CARD_PAD * 2,
-        "/media/developer/apps/usr/palm/applications/org.homebrew.chiaki/chiaki-ng-Default.ini",
-        2);
+    /* Highlight the strip portion matching current step */
+    int strip_seg = (CONTENT_H - 28) / 3;
+    fill_rect(r, LEFT_X, CONTENT_Y + 14 + (step - 1) * strip_seg, 4, strip_seg);
 
-    set_color(r, COL_ACCENT);
-    draw_text(r, fx, fy + 178, "2. Enter your PS5 LAN IP address", 2);
-    set_color(r, COL_TEXT_DIM);
-    draw_text(r, fx, fy + 200, "PS5: Settings > Network > Connection Status > View Connection Status", 2);
+    /* ── Step progress row (inside left panel) ───────────────────────────── */
+    const int BADGE_SZ = 44;
+    const int STEP_Y   = CONTENT_Y + 32;
 
-    // IP input
-    int ip_y = fy + 242;
-    set_color(r, COL_TEXT);
-    draw_text(r, fx, ip_y, "PS5 IP Address:", 2);
-    int cursor = (int)(ip ? strlen(ip) : 0);
-    bool ip_focused = (focus == 0) || show_keypad;
-    draw_input_box(r, fx + 320, ip_y - 14, 520, 64, ip, cursor, ip_focused);
+    /* Three badge centre-x positions within the left panel */
+    static const int STEP_OFFSETS[3] = { 110, 340, 570 };
 
-    // When the IP field is "entered", show a remote-friendly numeric keypad.
-    // Otherwise, keep the page clean.
-    const int btn_w = 360;
-    const int btn_h = 72;
-    int btn_y = ip_y + 92;
+    /* Connecting lines between badges */
+    for (int i = 0; i < 2; i++) {
+        int lx1 = LEFT_X + STEP_OFFSETS[i] + BADGE_SZ / 2;
+        int lx2 = LEFT_X + STEP_OFFSETS[i + 1] - BADGE_SZ / 2;
+        int ly  = STEP_Y + BADGE_SZ / 2;
+        /* Base line */
+        set_color(r, COL_BORDER_DIM);
+        fill_rect(r, lx1, ly - 1, lx2 - lx1, 3);
+        /* Progress overlay */
+        if (i + 2 <= step) {
+            set_color(r, (step == 3) ? COL_SUCCESS : COL_ACCENT_MID);
+            fill_rect(r, lx1, ly - 1, lx2 - lx1, 3);
+        }
+    }
 
-    if (show_keypad)
-    {
-        // On-screen numeric keypad (for TV remote)
-        // Focus mapping (when keypad shown): 1..12=keys, 15=Done
-        static const char *keys[12] = {
-            "1","2","3",
-            "4","5","6",
-            "7","8","9",
-            ".","0","DEL"
-        };
-        const int key_w = 110;
-        const int key_h = 56;
-        const int key_gap = 16;
-        const int cols = 3;
-        const int rows = 4;
-        int keypad_x = fx + 320;
-        int keypad_y = ip_y + 70;
+    /* Step badges */
+    static const char *STEP_LABELS[3] = { "GET KEYS", "PS5 IP", "CONNECT" };
+    for (int i = 0; i < 3; i++) {
+        bool done   = (i + 1 < step);
+        bool active = (i + 1 == step);
+        int bx = LEFT_X + STEP_OFFSETS[i] - BADGE_SZ / 2;
+        draw_step_badge(r, bx, STEP_Y, BADGE_SZ, i + 1, done, active);
+        /* Label below */
+        set_color(r,
+            done   ? COL_SUCCESS :
+            active ? COL_TEXT    : COL_TEXT_FAINT);
+        draw_text_centered(r, LEFT_X + STEP_OFFSETS[i],
+                           STEP_Y + BADGE_SZ + 8, STEP_LABELS[i], 1);
+    }
+
+    /* Divider below step row */
+    set_color(r, COL_BORDER_DIM);
+    hline(r, LEFT_X + 20, STEP_Y + BADGE_SZ + 28, LEFT_W - 40);
+
+    /* ── Step-specific instructions ──────────────────────────────────────── */
+    int ix = LEFT_X + 22;
+    int iy = STEP_Y + BADGE_SZ + 46;
+    int iw = LEFT_W - 44;
+
+    if (step == 1) {
+        set_color(r, COL_ACCENT);
+        draw_text(r, ix, iy, "Import chiaki-ng settings", 2);
+        iy += 32;
 
         set_color(r, COL_TEXT_DIM);
-        draw_text(r, keypad_x, keypad_y - 30, "Use keypad to enter IP (remote-friendly)", 2);
+        draw_text(r, ix, iy, "On your PC:", 2);
+        iy += 22;
 
-        for (int i = 0; i < 12; i++)
-        {
-            int row = i / cols;
-            int col = i % cols;
-            int x = keypad_x + col * (key_w + key_gap);
-            int y = keypad_y + row * (key_h + key_gap);
-            bool kfocus = (focus == (1 + i));
-            draw_button(r, x, y, key_w, key_h, keys[i], kfocus, true);
+        set_color(r, COL_TEXT);
+        draw_text(r, ix + 14, iy, "1. Open chiaki-ng on computer", 2); iy += 20;
+        draw_text(r, ix + 14, iy, "2. Settings -> Config -> Export Settings To File", 2); iy += 20;
+        draw_text(r, ix + 14, iy, "3. Save chiaki-ng-Default.ini", 2); iy += 32;
+
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Copy to the TV via ADB:", 2); iy += 22;
+
+        draw_code_block(r, ix, iy, iw,
+            "adb push chiaki-ng-Default.ini \\\n"
+            " /media/developer/apps/usr/palm/\n"
+            " applications/org.homebrew.chiaki/", 2);
+        iy += 114;
+
+		set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Or use WebOS Dev Manager for copying file to:", 2); iy += 22;
+		
+		draw_code_block(r, ix, iy, iw,
+            " /media/developer/apps/usr/palm/\n"
+            " applications/org.homebrew.chiaki/", 2);
+        iy += 114;
+
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Then on this screen:", 2); iy += 22;
+        set_color(r, COL_TEXT);
+        draw_text(r, ix + 14, iy, "1. Enter your PS5 IP address", 2); iy += 20;
+        draw_text(r, ix + 14, iy, "2. Press  Import Config", 2);
+
+    } else if (step == 2) {
+        set_color(r, COL_ACCENT);
+        draw_text(r, ix, iy, "Enter your PS5 IP address", 2);
+        iy += 32;
+
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Find it on your PS5:", 2);
+        iy += 22;
+
+        set_color(r, COL_TEXT);
+        draw_text(r, ix + 14, iy, "Settings", 2); iy += 18;
+        draw_text(r, ix + 22, iy, "-> Network", 2); iy += 18;
+        draw_text(r, ix + 30, iy, "-> Connection Status", 2); iy += 18;
+        draw_text(r, ix + 38, iy, "-> View Connection Status", 2); iy += 30;
+
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Look for  IP Address:", 2); iy += 22;
+        draw_code_block(r, ix, iy, iw, "e.g.  192.168.1.50", 2);
+        iy += 52;
+
+        /* Keys status — already done at this point */
+        set_color(r, COL_SUCCESS);
+        draw_text(r, ix, iy, "Registration keys: OK", 2); iy += 22;
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Just need a valid IP to connect.", 2);
+
+    } else {
+        /* Step 3 — ready */
+        set_color(r, COL_ACCENT);
+        draw_text(r, ix, iy, "Ready to stream", 2);
+        iy += 32;
+
+        set_color(r, COL_SUCCESS);
+        draw_text(r, ix, iy, "Registration keys:  OK", 2); iy += 24;
+
+        char ip_line[80];
+        snprintf(ip_line, sizeof(ip_line), "PS5 IP address:     %s", ip ? ip : "?");
+        draw_text(r, ix, iy, ip_line, 2); iy += 40;
+
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, ix, iy, "Press  Connect  to begin streaming.", 2); iy += 22;
+        draw_text(r, ix, iy, "If wakeup is configured the PS5 will", 2); iy += 20;
+        draw_text(r, ix, iy, "wake automatically from rest mode.", 2);
+    }
+
+    /* ── Right panel ─────────────────────────────────────────────────────── */
+    set_color(r, COL_ELEVATED);
+    fill_rounded_rect(r, RIGHT_X, CONTENT_Y, RIGHT_W, CONTENT_H, 14);
+
+    /* Right panel right accent strip (subtle) */
+    set_color(r, COL_BORDER_DIM);
+    fill_rect(r, RIGHT_X + RIGHT_W - 4, CONTENT_Y + 14, 4, CONTENT_H - 28);
+
+    int rx = RIGHT_X + 52;
+    int ry = CONTENT_Y + 52;
+    int rw = RIGHT_W - 104;
+
+    /* ── IP address field ───────────────────────────────────────────────── */
+    set_color(r, COL_TEXT_DIM);
+    draw_text(r, rx, ry, "PS5 IP ADDRESS", 2);
+    ry += 26;
+
+    bool ip_box_focused = (focus == 0) || show_keypad;
+    int ip_cursor = ip ? (int)strlen(ip) : 0;
+    draw_input_box(r, rx, ry, rw, 72, ip, ip_cursor, ip_box_focused);
+    ry += 72 + 20;
+
+    if (show_keypad) {
+        /* ── On-screen numeric keypad ───────────────────────────────────── */
+        set_color(r, COL_TEXT_DIM);
+        draw_text(r, rx, ry, "ENTER IP  (arrows + OK)", 2);
+        ry += 26;
+
+        static const char *KEYS[12] = {
+            "1","2","3","4","5","6","7","8","9",".","0","DEL"
+        };
+        const int KW = 128, KH = 64, KGAP = 12, COLS = 3, ROWS = 4;
+
+        for (int i = 0; i < 12; i++) {
+            int row = i / COLS, col = i % COLS;
+            int kx = rx + col * (KW + KGAP);
+            int ky = ry + row * (KH + KGAP);
+            draw_button(r, kx, ky, KW, KH, KEYS[i], (focus == i + 1), true);
         }
 
-        int keypad_h = rows * key_h + (rows - 1) * key_gap;
-        btn_y = keypad_y + keypad_h + 26;
+        int kpad_h = ROWS * KH + (ROWS - 1) * KGAP;
+        int done_y = ry + kpad_h + 16;
+        int done_w = COLS * KW + (COLS - 1) * KGAP;
+        draw_button(r, rx, done_y, done_w, KH, "Done", (focus == 15), true);
 
-        // Done (closes keypad and returns to launcher)
-        int done_w = cols * key_w + (cols - 1) * key_gap;
-        draw_button(r, fx + 320, btn_y, done_w, btn_h, "Done", focus == 15, true);
+    } else {
+        /* ── Main action buttons ────────────────────────────────────────── */
+        int btn_h = 80;
+        int btn_w = (rw - 20) / 2;
 
-        // Message (still show status/errors while keypad is open)
-        if (msg && msg[0]) {
+        draw_button(r, rx,              ry, btn_w, btn_h, "Import Config", focus == 13, can_import);
+        draw_button(r, rx + btn_w + 20, ry, btn_w, btn_h, "Connect",       focus == 14, can_connect);
+        ry += btn_h + 16;
+
+        /* Settings — full width */
+        draw_button(r, rx, ry, rw, 60, "Settings", focus == 16, true);
+        ry += 60 + 36;
+
+        /* Contextual guidance */
+        if (step == 1 && !can_import) {
+            set_color(r, COL_TEXT_FAINT);
+            draw_text(r, rx, ry, "Enter a PS5 IP address above,", 2); ry += 20;
+            draw_text(r, rx, ry, "then press Import Config to load", 2); ry += 20;
+            draw_text(r, rx, ry, "your registration keys.", 2);
+        } else if (step == 1 && can_import) {
             set_color(r, COL_TEXT_DIM);
-            draw_text(r, fx, btn_y + btn_h + 18, msg, 2);
+            draw_text(r, rx, ry, "IP looks good. If you have copied", 2); ry += 20;
+            draw_text(r, rx, ry, "chiaki-ng-Default.ini to the TV,", 2); ry += 20;
+            draw_text(r, rx, ry, "press  Import Config  to continue.", 2);
+        } else if (step == 2) {
+            set_color(r, COL_TEXT_DIM);
+            draw_text(r, rx, ry, "Keys imported. Enter the PS5 IP", 2); ry += 20;
+            draw_text(r, rx, ry, "address above, then press Connect.", 2);
         }
     }
-    else
-    {
-        // Main buttons
-        draw_button(r, fx, btn_y, btn_w, btn_h, "Import Config", focus == 13, can_import);
-        draw_button(r, fx + btn_w + 40, btn_y, btn_w, btn_h, "Connect", focus == 14, can_connect);
 
-        // Settings button (non-connection options)
-        int settings_y = btn_y + btn_h + 18;
-        draw_button(r, fx, settings_y, btn_w * 2 + 40, btn_h, "Settings", focus == 16, true);
+    /* ── Status message (if any) ────────────────────────────────────────── */
+    if (msg && msg[0]) {
+        int msg_y = CONTENT_Y + CONTENT_H - 56;
+        /* Pick colour based on content */
+        if (strstr(msg, "OK") || strstr(msg, "ok") || strstr(msg, "Import OK"))
+            set_color(r, COL_SUCCESS);
+        else if (strstr(msg, "failed") || strstr(msg, "MISSING") ||
+                 strstr(msg, "not found") || strstr(msg, "Missing"))
+            set_color(r, COL_ERROR);
+        else
+            set_color(r, COL_WARNING);
 
-        // Message
-        if (msg && msg[0]) {
-            set_color(r, COL_TEXT_DIM);
-            draw_text(r, fx, settings_y + btn_h + 18, msg, 2);
-        }
+        /* Truncate long messages to fit */
+        char trunc[72];
+        strncpy(trunc, msg, sizeof(trunc) - 1);
+        trunc[sizeof(trunc) - 1] = '\0';
+        draw_text(r, RIGHT_X + 52, msg_y, trunc, 2);
     }
 
-    // Hint bar
-    set_color(r, COL_BORDER);
-    fill_rect(r, 0, SCREEN_H - 56, SCREEN_W, 56);
+    /* ── Status pills row ───────────────────────────────────────────────── */
+    int pill_y  = FOOTER_Y - 48;
+    int pill_x  = LEFT_X;
+
+    pill_x += draw_status_pill(r, pill_x, pill_y, "Keys: Ready", has_keys);
+    pill_x += draw_status_pill(r, pill_x, pill_y, ip && ip[0] ? ip : "IP: Not Set",
+                                can_import);
+    /* Note: can_connect also requires keys, so it's only true if both are set */
+    if (can_connect)
+        draw_status_pill(r, pill_x, pill_y, "Ready", true);
+
+    /* ── Footer hint bar ────────────────────────────────────────────────── */
+    set_color(r, COL_PANEL);
+    fill_rect(r, 0, FOOTER_Y, SCREEN_W, FOOTER_H);
+    set_color(r, COL_BORDER_DIM);
+    hline(r, 0, FOOTER_Y, SCREEN_W);
+
     set_color(r, COL_TEXT_FAINT);
     if (show_keypad) {
-        draw_text_centered(r, cx, SCREEN_H - 38,
-            "ARROWS: Keypad   OK: Input   BACK: Done", 2);
+        draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
+            "ARROWS: Move keypad   OK: Type digit   BACK: Close keypad", 2);
     } else {
-        draw_text_centered(r, cx, SCREEN_H - 38,
-            "ARROWS: Navigate   OK: Select   BACK: Exit", 2);
+        draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
+            "ARROWS: Navigate   OK: Select / Edit IP   BACK: Exit", 2);
     }
 
-    // Key status debug line
-    set_color(r, COL_ACCENT);
-    draw_text(r, CARD_X + CARD_PAD, SCREEN_H - 80, status, 1);
+    /* Debug key-status — very small, bottom-left corner */
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, LEFT_X, FOOTER_Y + FOOTER_H - 12, status, 1);
 }
 
-// ── Settings screen ─────────────────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+ * Settings screen
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 typedef enum {
-    SET_RESOLUTION = 0,
+    SET_RESOLUTION = 0,   /* VIDEO group */
     SET_FPS,
     SET_BITRATE,
     SET_CODEC,
-    SET_PS5,
-    SET_HW_DECODER,
+    SET_PS5,              /* SESSION group — must match render order below */
     SET_WAKE_ON_START,
     SET_SLEEP_ON_EXIT,
+    SET_HW_DECODER,       /* DEVELOPER group */
     SET_LOG_LEVEL,
     SET_RETURN,
     SET_COUNT
 } SettingsFocus;
 
-typedef struct {
-    int w;
-    int h;
-    const char *label;
-} ResOption;
+typedef struct { int w, h; const char *label; } ResOption;
 
 static const ResOption RES_OPTIONS[] = {
     {1280, 720,  "720p"},
@@ -432,12 +761,11 @@ static const ResOption RES_OPTIONS[] = {
     {2560, 1440, "1440p"},
     {3840, 2160, "2160p"},
 };
-
-static const int FPS_OPTIONS[] = {30, 60};
+static const int FPS_OPTIONS[]    = {30, 60};
 static const int BITRATE_OPTIONS[] = {5000, 10000, 15000, 25000, 35000, 45000};
 static const char *CODEC_OPTIONS[] = {"h264", "h265", "h265_hdr"};
-static const char *CODEC_LABELS[]  = {"H.264 (AVC)", "H.265 (HEVC)", "H.265 HDR (HEVC)"};
-static const char *LOG_LEVEL_STRS[] = {"off","error","warning","info","verbose","debug"};
+static const char *CODEC_LABELS[]  = {"H.264 (AVC)", "H.265 (HEVC)", "H.265 HDR"};
+static const char *LOG_LEVEL_STRS[]   = {"off","error","warning","info","verbose","debug"};
 static const char *LOG_LEVEL_LABELS[] = {"Off","Error","Warning","Info","Verbose","Debug"};
 
 static const char *ui_log_level_to_string(int mask)
@@ -445,96 +773,101 @@ static const char *ui_log_level_to_string(int mask)
     if (mask == 0) return "off";
     if (mask == 16) return "error";
     if ((mask & (16|8|4|2|1)) == (16|8|4|2|1)) return "debug";
-    if ((mask & (16|8|4|2)) == (16|8|4|2)) return "verbose";
-    if ((mask & (16|8|4)) == (16|8|4)) return "info";
-    if ((mask & (16|8)) == (16|8)) return "warning";
+    if ((mask & (16|8|4|2))   == (16|8|4|2))   return "verbose";
+    if ((mask & (16|8|4))     == (16|8|4))     return "info";
+    if ((mask & (16|8))       == (16|8))       return "warning";
     return "warning";
 }
 
 static int ui_log_level_from_string(const char *s)
 {
-    if (!s || !s[0] || !strcmp(s, "off")) return 0;
-    if (!strcmp(s, "error")) return 16;
-    if (!strcmp(s, "warning")) return 16|8;
-    if (!strcmp(s, "info")) return 16|8|4;
-    if (!strcmp(s, "verbose")) return 16|8|4|2;
-    if (!strcmp(s, "debug")) return 16|8|4|2|1;
+    if (!s || !s[0] || !strcmp(s,"off"))     return 0;
+    if (!strcmp(s,"error"))                  return 16;
+    if (!strcmp(s,"warning"))                return 16|8;
+    if (!strcmp(s,"info"))                   return 16|8|4;
+    if (!strcmp(s,"verbose"))                return 16|8|4|2;
+    if (!strcmp(s,"debug"))                  return 16|8|4|2|1;
     return 16|8;
 }
 
 static int ui_find_resolution_idx(const AppConfig *cfg)
 {
-    int w = cfg ? cfg->video_width : 1920;
-    int h = cfg ? cfg->video_height : 1080;
+    int w = cfg ? cfg->video_width : 1920, h = cfg ? cfg->video_height : 1080;
     for (int i = 0; i < (int)(sizeof(RES_OPTIONS)/sizeof(RES_OPTIONS[0])); i++)
-        if (RES_OPTIONS[i].w == w && RES_OPTIONS[i].h == h)
-            return i;
-    return 1; // default 1080p
+        if (RES_OPTIONS[i].w == w && RES_OPTIONS[i].h == h) return i;
+    return 1;
 }
-
 static int ui_find_fps_idx(const AppConfig *cfg)
 {
     int fps = cfg ? cfg->video_fps : 60;
     for (int i = 0; i < (int)(sizeof(FPS_OPTIONS)/sizeof(FPS_OPTIONS[0])); i++)
-        if (FPS_OPTIONS[i] == fps)
-            return i;
-    return 1; // default 60
+        if (FPS_OPTIONS[i] == fps) return i;
+    return 1;
 }
-
 static int ui_find_bitrate_idx(const AppConfig *cfg)
 {
     int br = cfg ? cfg->video_bitrate : 15000;
     for (int i = 0; i < (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0])); i++)
-        if (BITRATE_OPTIONS[i] == br)
-            return i;
-    // pick nearest
-    int best = 2;
-    int best_diff = 1000000;
+        if (BITRATE_OPTIONS[i] == br) return i;
+    int best = 2, best_diff = 1000000;
     for (int i = 0; i < (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0])); i++) {
-        int d = BITRATE_OPTIONS[i] - br;
-        if (d < 0) d = -d;
+        int d = BITRATE_OPTIONS[i] - br; if (d < 0) d = -d;
         if (d < best_diff) { best_diff = d; best = i; }
     }
     return best;
 }
-
 static int ui_find_codec_idx(const AppConfig *cfg)
 {
     const char *c = (cfg && cfg->video_codec) ? cfg->video_codec : "h265";
-    for (int i = 0; i < 3; i++)
-        if (!strcmp(CODEC_OPTIONS[i], c))
-            return i;
+    for (int i = 0; i < 3; i++) if (!strcmp(CODEC_OPTIONS[i], c)) return i;
     return 1;
 }
-
 static int ui_find_log_level_idx(const AppConfig *cfg)
 {
     const char *s = ui_log_level_to_string(cfg ? cfg->log_level : (16|8));
-    for (int i = 0; i < 6; i++)
-        if (!strcmp(LOG_LEVEL_STRS[i], s))
-            return i;
-    return 2; // warning
+    for (int i = 0; i < 6; i++) if (!strcmp(LOG_LEVEL_STRS[i], s)) return i;
+    return 2;
 }
 
+/* Draw a settings option row with label on left, value chip on right */
 static void ui_draw_option_row(SDL_Renderer *r, int x, int y, int w, int h,
                                const char *label, const char *value, bool focused)
 {
-    set_color(r, COL_CODE_BG);
-    fill_rounded_rect(r, x, y, w, h, 10);
-    if (focused) set_color(r, COL_ACCENT);
-    else         set_color(r, COL_BORDER);
-    SDL_Rect rr = {x, y, w, h};
-    SDL_RenderDrawRect(r, &rr);
+    int radius = 8;
+
+    if (focused) {
+        /* Focused row: accent fill */
+        set_color(r, COL_ACCENT_DARK);
+        fill_rounded_rect(r, x, y, w, h, radius);
+        /* Left focus indicator */
+        set_color(r, COL_ACCENT);
+        fill_rect(r, x, y + 2, 4, h - 4);
+    } else {
+        set_color(r, COL_CODE_BG);
+        fill_rounded_rect(r, x, y, w, h, radius);
+        set_color(r, COL_BORDER_DIM);
+        draw_rect_outline(r, x, y, w, h);
+    }
 
     int scale = 2;
-    int ty = y + (h - (7 * scale)) / 2;
-    set_color(r, COL_TEXT);
-    draw_text(r, x + 18, ty, label, scale);
+    int ty = y + (h - 7 * scale) / 2;
+
+    set_color(r, focused ? COL_TEXT : COL_TEXT_DIM);
+    draw_text(r, x + 20, ty, label, scale);
 
     if (value) {
-        set_color(r, focused ? COL_TEXT : COL_TEXT_DIM);
         int vw = text_width(value, scale);
-        draw_text(r, x + w - 18 - vw, ty, value, scale);
+        /* Value chip */
+        if (focused) {
+            set_color(r, COL_ACCENT);
+            fill_rounded_rect(r, x + w - vw - 32, ty - 4, vw + 24, 7 * scale + 8, 6);
+            set_color(r, COL_TEXT);
+        } else {
+            set_color(r, COL_CARD);
+            fill_rounded_rect(r, x + w - vw - 32, ty - 4, vw + 24, 7 * scale + 8, 6);
+            set_color(r, COL_TEXT_DIM);
+        }
+        draw_text(r, x + w - vw - 20, ty, value, scale);
     }
 }
 
@@ -542,222 +875,279 @@ static void ui_render_settings_screen(SDL_Renderer *r,
                                       const AppConfig *cfg,
                                       int focus,
                                       const char *msg,
-                                      int res_idx,
-                                      int fps_idx,
-                                      int br_idx,
-                                      int codec_idx,
+                                      int res_idx, int fps_idx,
+                                      int br_idx,  int codec_idx,
                                       int log_idx)
 {
-    int cx = SCREEN_W / 2;
+    /* Background */
     set_color(r, COL_BG);
     fill_rect(r, 0, 0, SCREEN_W, SCREEN_H);
+    set_color(r, COL_BG_DEEPER);
+    fill_rect(r, 0, 0, SCREEN_W, 60);
 
-    set_color(r, COL_CARD);
-    fill_rounded_rect(r, CARD_X, CARD_Y, CARD_W, CARD_H, CORNER_R);
+    /* Header */
+    set_color(r, COL_PANEL);
+    fill_rect(r, 0, HDR_Y, SCREEN_W, HDR_H);
+    set_color(r, COL_BORDER_DIM);
+    hline(r, 0, HDR_Y + HDR_H - 1, SCREEN_W);
     set_color(r, COL_ACCENT);
-    fill_rect(r, CARD_X, CARD_Y, CARD_W, 6);
-
-    // Header
+    fill_rect(r, 0, HDR_Y, 8, HDR_H);
     set_color(r, COL_TEXT);
-    draw_text_centered(r, cx, CARD_Y + 34, "Settings", 3);
-    set_color(r, COL_BORDER);
-    fill_rect(r, CARD_X + CARD_PAD, CARD_Y + 74, CARD_W - CARD_PAD * 2, 1);
-
-    // Compact layout: keep all rows + Return comfortably within the card
-    int fx = CARD_X + CARD_PAD;
-    int y  = CARD_Y + 92;
+    draw_text(r, 36, HDR_Y + 10, "CHIAKI", 4);
     set_color(r, COL_TEXT_DIM);
-    draw_text(r, fx, y, "Streaming options (saved to config.json)", 2);
+    draw_text(r, 36, HDR_Y + 50, "Settings", 2);
 
-    int row_x = fx;
-    int row_w = CARD_W - CARD_PAD * 2;
-    int row_h = 54;
-    int row_gap = 10;
-    y += 26;
+    /* Content area (single card, centred) */
+    const int CX    = 200;
+    const int CY    = CONTENT_Y;
+    const int CW    = SCREEN_W - 400;
+    const int CH    = CONTENT_H;
 
-    char vbuf[128];
+    set_color(r, COL_PANEL);
+    fill_rounded_rect(r, CX, CY, CW, CH, 14);
+    set_color(r, COL_ACCENT);
+    fill_rect(r, CX, CY, 6, CH);
 
-    // Resolution
-    snprintf(vbuf, sizeof(vbuf), "%s (%dx%d)", RES_OPTIONS[res_idx].label, RES_OPTIONS[res_idx].w, RES_OPTIONS[res_idx].h);
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Resolution", vbuf, focus == SET_RESOLUTION);
-    y += row_h + row_gap;
+    /* Section header */
+    int rx = CX + 36, ry = CY + 22, rw = CW - 72;
+    set_color(r, COL_TEXT);
+    draw_text(r, rx, ry, "Streaming Options", 3);
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, rx + CW - 72 - text_width("Saved to config.json", 2),
+              ry + 4, "Saved to config.json", 2);
+    ry += 38;
+    set_color(r, COL_BORDER_DIM);
+    hline(r, rx, ry, rw);
+    ry += 10;
 
-    // FPS
-    snprintf(vbuf, sizeof(vbuf), "%d", FPS_OPTIONS[fps_idx]);
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "FPS", vbuf, focus == SET_FPS);
-    y += row_h + row_gap;
+    const int ROW_H   = 44;
+    const int ROW_GAP = 6;
+    char vbuf[64];
 
-    // Bitrate
+    /* Group: Video */
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, rx, ry, "VIDEO", 2); ry += 20;
+
+    snprintf(vbuf, sizeof(vbuf), "%s  (%dx%d)",
+             RES_OPTIONS[res_idx].label, RES_OPTIONS[res_idx].w, RES_OPTIONS[res_idx].h);
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Resolution", vbuf, focus == SET_RESOLUTION);
+    ry += ROW_H + ROW_GAP;
+
+    snprintf(vbuf, sizeof(vbuf), "%d fps", FPS_OPTIONS[fps_idx]);
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Frame Rate", vbuf, focus == SET_FPS);
+    ry += ROW_H + ROW_GAP;
+
     snprintf(vbuf, sizeof(vbuf), "%d kbps", BITRATE_OPTIONS[br_idx]);
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Bitrate", vbuf, focus == SET_BITRATE);
-    y += row_h + row_gap;
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Bitrate", vbuf, focus == SET_BITRATE);
+    ry += ROW_H + ROW_GAP;
 
-    // Codec
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Codec", CODEC_LABELS[codec_idx], focus == SET_CODEC);
-    y += row_h + row_gap;
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Codec", CODEC_LABELS[codec_idx], focus == SET_CODEC);
+    ry += ROW_H + ROW_GAP + 4;
 
-    // PS5
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "PS5", (cfg && cfg->ps5) ? "On" : "Off", focus == SET_PS5);
-    y += row_h + row_gap;
+    /* Group: Session */
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, rx, ry, "SESSION", 2); ry += 20;
 
-    // HW decoder
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "HW Decoder (NOT USED)", (cfg && cfg->hw_decode) ? "On" : "Off", focus == SET_HW_DECODER);
-    y += row_h + row_gap;
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "PS5 Mode",
+                       (cfg && cfg->ps5) ? "On" : "Off", focus == SET_PS5);
+    ry += ROW_H + ROW_GAP;
 
-    // Wake on start
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Wake on Start", (cfg && cfg->wakeup) ? "On" : "Off", focus == SET_WAKE_ON_START);
-    y += row_h + row_gap;
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Wake on Start",
+                       (cfg && cfg->wakeup) ? "On" : "Off", focus == SET_WAKE_ON_START);
+    ry += ROW_H + ROW_GAP;
 
-    // Sleep on exit
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Sleep on Exit", (cfg && cfg->sleep_on_exit) ? "On" : "Off", focus == SET_SLEEP_ON_EXIT);
-    y += row_h + row_gap;
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Sleep on Exit",
+                       (cfg && cfg->sleep_on_exit) ? "On" : "Off", focus == SET_SLEEP_ON_EXIT);
+    ry += ROW_H + ROW_GAP + 4;
 
-    // Log level
-    ui_draw_option_row(r, row_x, y, row_w, row_h, "Log Level", LOG_LEVEL_LABELS[log_idx], focus == SET_LOG_LEVEL);
-    y += row_h + row_gap + 6;
+    /* Group: Developer */
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, rx, ry, "DEVELOPER", 2); ry += 20;
 
-    // Return button (keep within the card and away from the bottom hint bar)
-    draw_button(r, row_x, y, row_w, 56, "Return", focus == SET_RETURN, true);
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "HW Decoder (unused)",
+                       (cfg && cfg->hw_decode) ? "On" : "Off", focus == SET_HW_DECODER);
+    ry += ROW_H + ROW_GAP;
 
-    // Message (outside the card, above the bottom hint bar)
+    ui_draw_option_row(r, rx, ry, rw, ROW_H, "Log Level",
+                       LOG_LEVEL_LABELS[log_idx], focus == SET_LOG_LEVEL);
+    ry += ROW_H + ROW_GAP + 8;
+
+    /* Return button */
+    draw_button(r, rx, ry, rw, 50, "Return", focus == SET_RETURN, true);
+
+    /* Message (below card, above footer) */
     if (msg && msg[0]) {
         set_color(r, COL_TEXT_DIM);
-        draw_text(r, row_x, CARD_Y + CARD_H + 10, msg, 2);
+        draw_text_centered(r, SCREEN_W / 2, CY + CH + 10, msg, 2);
     }
 
-    // Hint bar
-    set_color(r, COL_BORDER);
-    fill_rect(r, 0, SCREEN_H - 56, SCREEN_W, 56);
+    /* Footer */
+    set_color(r, COL_PANEL);
+    fill_rect(r, 0, FOOTER_Y, SCREEN_W, FOOTER_H);
+    set_color(r, COL_BORDER_DIM);
+    hline(r, 0, FOOTER_Y, SCREEN_W);
     set_color(r, COL_TEXT_FAINT);
-    draw_text_centered(r, cx, SCREEN_H - 38,
-        "UP/DOWN: Navigate   LEFT/RIGHT: Change   OK: Select   BACK: Return", 2);
+    draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
+        "UP/DOWN: Navigate   LEFT/RIGHT: Change value   BACK: Return", 2);
 }
 
-// ── Minimal loading screen ──────────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+ * Loading screen
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 void ui_render_loading(SDL_Renderer *r, const char *base_text)
 {
-    int w = SCREEN_W, h = SCREEN_H;
-    (void)SDL_GetRendererOutputSize(r, &w, &h);
+    int sw = SCREEN_W, sh = SCREEN_H;
+    (void)SDL_GetRendererOutputSize(r, &sw, &sh);
 
-    // Animated dots (0..3)
-    int dots = (int)((SDL_GetTicks() / 350) % 4);
-    char msg[256];
-    if (!base_text) base_text = "Loading";
-    snprintf(msg, sizeof(msg), "%s%.*s", base_text, dots, "...");
-
-    // Opaque background so it is visible before the NDL plane starts.
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
-    SDL_RenderClear(r);
+    set_color(r, COL_BG);
+    fill_rect(r, 0, 0, sw, sh);
 
-    // Simple centered text
-    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-    int scale = 4;
-    draw_text_centered(r, w / 2, (h / 2) - (9 * scale), msg, scale);
+    /* PS blue top accent bar */
+    set_color(r, COL_ACCENT);
+    fill_rect(r, 0, 0, sw, 6);
 
-    SDL_SetRenderDrawColor(r, 160, 160, 160, 255);
-    draw_text_centered(r, w / 2, (h / 2) + (9 * scale), "Please wait", 2);
+    /* App branding in top-left */
+    set_color(r, COL_TEXT_FAINT);
+    draw_text(r, 40, 30, "CHIAKI", 3);
+
+    /* Centre content */
+    if (!base_text) base_text = "Loading";
+
+    /* Animated spinner (8-frame dot ring around centre text) */
+    int cx = sw / 2, cy = sh / 2;
+
+    /* Spinner dots: 8 positions around a circle radius 42 */
+    /* Approximate circle positions at radius 42 */
+    static const int DOT_DX[8] = {  0, 30, 42, 30,  0, -30, -42, -30 };
+    static const int DOT_DY[8] = {-42,-30,  0, 30, 42,  30,   0, -30 };
+    int spin_frame = (int)((SDL_GetTicks() / 80) % 8);
+
+    for (int i = 0; i < 8; i++) {
+        int age = (8 + spin_frame - i) % 8;  /* 0 = newest (brightest) */
+        int bright = 200 - age * 22;
+        if (bright < 40) bright = 40;
+        set_color(r, 0x00, (int)(bright * 0.6f), bright, 0xff);
+        int dsz = (age == 0) ? 10 : 6;
+        fill_rounded_rect(r,
+            cx + DOT_DX[i] - dsz / 2,
+            cy + DOT_DY[i] - dsz / 2,
+            dsz, dsz, 3);
+    }
+
+    /* Animated message with dots */
+    int dot_count = (int)((SDL_GetTicks() / 400) % 4);
+    char msg[256];
+    snprintf(msg, sizeof(msg), "%s%.*s", base_text, dot_count, "...");
+
+    int msg_scale = 4;
+    int mw = text_width(msg, msg_scale);
+    set_color(r, COL_TEXT);
+    draw_text(r, cx - mw / 2, cy + 70, msg, msg_scale);
+
+    /* Subtitle */
+    set_color(r, COL_TEXT_DIM);
+    draw_text_centered(r, cx, cy + 116, "Please wait", 2);
 }
 
-
-// ── Stats overlay (drawn on top of video plane) ─────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+ * Stats overlay
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 void ui_render_stats_overlay(SDL_Renderer *r, const char *text)
 {
-    if(!r || !text || !text[0])
-        return;
+    if (!r || !text || !text[0]) return;
 
-    int w = SCREEN_W, h = SCREEN_H;
-    (void)SDL_GetRendererOutputSize(r, &w, &h);
+    int sw = SCREEN_W, sh = SCREEN_H;
+    (void)SDL_GetRendererOutputSize(r, &sw, &sh);
 
-    const int scale = 2;
-    const int pad = 18;
+    const int scale  = 2;
+    const int pad    = 20;
     const int line_h = 9 * scale;
 
-    // Compute max line width and number of lines
-    int lines = 1;
-    int maxw = 0;
-    int curw = 0;
-    for(const char *p = text; *p; p++)
-    {
-        if(*p == '\n')
-        {
-            if(curw > maxw) maxw = curw;
-            curw = 0;
-            lines++;
-            continue;
-        }
+    /* Measure */
+    int lines = 1, maxw = 0, curw = 0;
+    for (const char *p = text; *p; p++) {
+        if (*p == '\n') { if (curw > maxw) maxw = curw; curw = 0; lines++; continue; }
         curw += 6 * scale;
     }
-    if(curw > maxw) maxw = curw;
+    if (curw > maxw) maxw = curw;
 
-    int box_w = maxw + pad * 2;
+    int box_w = maxw + pad * 2 + 8;  /* +8 for left accent bar */
     int box_h = lines * line_h + pad * 2;
+    if (box_w > sw - 40) box_w = sw - 40;
+    if (box_h > sh - 40) box_h = sh - 40;
 
-    // Clamp box to screen
-    if(box_w > w - 40) box_w = w - 40;
-    if(box_h > h - 40) box_h = h - 40;
+    int x = 24, y = 24;
 
-    int x = 20;
-    int y = 20;
-
-    // Semi-transparent background
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_color(r, 0, 0, 0, 170);
-    fill_rounded_rect(r, x, y, box_w, box_h, 10);
 
-    // Accent bar
+    /* Shadow */
+    set_color(r, 0x00, 0x00, 0x00, 100);
+    fill_rounded_rect(r, x + 4, y + 4, box_w, box_h, 12);
+
+    /* Background */
+    set_color(r, 0x06, 0x0e, 0x24, 210);
+    fill_rounded_rect(r, x, y, box_w, box_h, 12);
+
+    /* Border */
+    set_color(r, COL_BORDER);
+    draw_rect_outline(r, x, y, box_w, box_h);
+
+    /* Left accent bar */
     set_color(r, COL_ACCENT);
-    fill_rect(r, x, y, 4, box_h);
+    fill_rect(r, x, y + 3, 4, box_h - 6);
 
-    // Text
+    /* Text */
     set_color(r, COL_TEXT);
-    draw_text(r, x + pad, y + pad, text, scale);
+    draw_text(r, x + pad + 8, y + pad, text, scale);
+
+    /* Top label */
+    set_color(r, COL_ACCENT_MID);
+    hline(r, x + 4, y + pad + lines * line_h + 6, box_w - 8);
 }
 
-// ── Startup hint overlay ─────────────────────────────────────────────────────
-// Small semi-transparent hint shown briefly after the stream starts.
+/* ══════════════════════════════════════════════════════════════════════════
+ * Startup hint overlay
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 void ui_render_hint(SDL_Renderer *r, const char *text, float opacity)
 {
-    if(!r || !text || !text[0] || opacity <= 0.0f)
-        return;
+    if (!r || !text || !text[0] || opacity <= 0.0f) return;
 
-    int w = SCREEN_W, h = SCREEN_H;
-    (void)SDL_GetRendererOutputSize(r, &w, &h);
+    int sw = SCREEN_W, sh = SCREEN_H;
+    (void)SDL_GetRendererOutputSize(r, &sw, &sh);
+    (void)sh;
 
     const int scale = 2;
-    const int pad = 12;
-    const int line_h = 9 * scale;
+    const int pad   = 14;
+    int tw = text_width(text, scale);
 
-    // Measure text width
-    int tw = 0;
-    for(const char *p = text; *p; p++)
-        tw += 6 * scale;
+    int box_w = tw + pad * 2 + 8;
+    int box_h = 7 * scale + pad * 2;
+    int x = 24, y = 24;
 
-    int box_w = tw + pad * 2;
-    int box_h = line_h + pad * 2;
-    int x = 20;
-    int y = 20;
+    if (opacity > 1.0f) opacity = 1.0f;
+    uint8_t alpha_bg   = (uint8_t)(180.0f * opacity);
+    uint8_t alpha_text = (uint8_t)(255.0f * opacity);
+    uint8_t alpha_acc  = (uint8_t)(220.0f * opacity);
 
-    uint8_t alpha = (uint8_t)(170.0f * (opacity > 1.0f ? 1.0f : opacity));
-
-    // Semi-transparent background pill
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_color(r, 0, 0, 0, alpha);
-    fill_rounded_rect(r, x, y, box_w, box_h, 10);
 
-    // Accent bar
-    set_color(r, 0x00, 0x37, 0x91, alpha);
-    fill_rect(r, x, y, 4, box_h);
+    set_color(r, 0x06, 0x0e, 0x24, alpha_bg);
+    fill_rounded_rect(r, x, y, box_w, box_h, box_h / 2);
 
-    // Text
-    set_color(r, 255, 255, 255, alpha);
-    draw_text(r, x + pad, y + pad, text, scale);
+    set_color(r, 0x00, 0x72, 0xff, alpha_acc);
+    fill_rect(r, x, y + 3, 4, box_h - 6);
+
+    set_color(r, 0xec, 0xf2, 0xff, alpha_text);
+    draw_text(r, x + pad + 8, y + pad, text, scale);
 }
 
-// ── Public entry point ────────────────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+ * Shared helpers (config / validation)
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 static bool ui_has_keys(const AppConfig *cfg)
 {
@@ -778,15 +1168,10 @@ static bool ui_valid_ipv4(const char *s)
 static bool ui_write_host(const char *config_path, const char *host)
 {
     if (!config_path || !host || !host[0]) return false;
-
     struct json_object *root = json_object_from_file(config_path);
-    if (!root)
-        root = json_object_new_object();
-
-    // overwrite host
+    if (!root) root = json_object_new_object();
     json_object_object_del(root, "host");
     json_object_object_add(root, "host", json_object_new_string(host));
-
     int rc = json_object_to_file_ext(config_path, root, JSON_C_TO_STRING_PRETTY);
     json_object_put(root);
     return rc == 0;
@@ -794,42 +1179,31 @@ static bool ui_write_host(const char *config_path, const char *host)
 
 static bool ui_write_settings_json(const char *config_path, const AppConfig *cfg)
 {
-    if (!config_path || !cfg)
-        return false;
-
+    if (!config_path || !cfg) return false;
     struct json_object *root = json_object_from_file(config_path);
-    if (!root)
-        root = json_object_new_object();
+    if (!root) root = json_object_new_object();
 
-    // ints
-    json_object_object_del(root, "video_width");
-    json_object_object_add(root, "video_width", json_object_new_int(cfg->video_width));
-    json_object_object_del(root, "video_height");
-    json_object_object_add(root, "video_height", json_object_new_int(cfg->video_height));
-    json_object_object_del(root, "video_fps");
-    json_object_object_add(root, "video_fps", json_object_new_int(cfg->video_fps));
-    json_object_object_del(root, "video_bitrate");
-    json_object_object_add(root, "video_bitrate", json_object_new_int(cfg->video_bitrate));
+#define SET_INT(k, v)  json_object_object_del(root, k); \
+                       json_object_object_add(root, k, json_object_new_int(v))
+#define SET_BOOL(k, v) json_object_object_del(root, k); \
+                       json_object_object_add(root, k, json_object_new_boolean(v))
+#define SET_STR(k, v)  json_object_object_del(root, k); \
+                       json_object_object_add(root, k, json_object_new_string(v))
 
-    // bools
-    json_object_object_del(root, "ps5");
-    json_object_object_add(root, "ps5", json_object_new_boolean(cfg->ps5));
-    json_object_object_del(root, "hw_decode");
-    json_object_object_add(root, "hw_decode", json_object_new_boolean(cfg->hw_decode));
-    json_object_object_del(root, "wakeup");
-    json_object_object_add(root, "wakeup", json_object_new_boolean(cfg->wakeup));
-    json_object_object_del(root, "sleep_on_exit");
-    json_object_object_add(root, "sleep_on_exit", json_object_new_boolean(cfg->sleep_on_exit));
+    SET_INT ("video_width",   cfg->video_width);
+    SET_INT ("video_height",  cfg->video_height);
+    SET_INT ("video_fps",     cfg->video_fps);
+    SET_INT ("video_bitrate", cfg->video_bitrate);
+    SET_BOOL("ps5",           cfg->ps5);
+    SET_BOOL("hw_decode",     cfg->hw_decode);
+    SET_BOOL("wakeup",        cfg->wakeup);
+    SET_BOOL("sleep_on_exit", cfg->sleep_on_exit);
+    SET_STR ("video_codec",   (cfg->video_codec && cfg->video_codec[0]) ? cfg->video_codec : "h265");
+    SET_STR ("log_level",     ui_log_level_to_string(cfg->log_level));
 
-    // codec
-    const char *codec = (cfg->video_codec && cfg->video_codec[0]) ? cfg->video_codec : "h265";
-    json_object_object_del(root, "video_codec");
-    json_object_object_add(root, "video_codec", json_object_new_string(codec));
-
-    // log level (write as string)
-    const char *ll = ui_log_level_to_string(cfg->log_level);
-    json_object_object_del(root, "log_level");
-    json_object_object_add(root, "log_level", json_object_new_string(ll));
+#undef SET_INT
+#undef SET_BOOL
+#undef SET_STR
 
     int rc = json_object_to_file_ext(config_path, root, JSON_C_TO_STRING_PRETTY);
     json_object_put(root);
@@ -847,22 +1221,12 @@ static void ui_build_ini_path(const char *config_path, char *out, size_t outlen)
 {
     if (!out || outlen == 0) return;
     out[0] = '\0';
-
-    if (!config_path) {
-        snprintf(out, outlen, "chiaki-ng-Default.ini");
-        return;
-    }
-
+    if (!config_path) { snprintf(out, outlen, "chiaki-ng-Default.ini"); return; }
     const char *slash = strrchr(config_path, '/');
-    if (!slash) {
-        snprintf(out, outlen, "chiaki-ng-Default.ini");
-        return;
-    }
-
+    if (!slash) { snprintf(out, outlen, "chiaki-ng-Default.ini"); return; }
     size_t dirlen = (size_t)(slash - config_path);
     if (dirlen + 1 >= outlen) dirlen = outlen - 2;
-    memcpy(out, config_path, dirlen);
-    out[dirlen] = '\0';
+    memcpy(out, config_path, dirlen); out[dirlen] = '\0';
     snprintf(out + dirlen, outlen - dirlen, "/chiaki-ng-Default.ini");
 }
 
@@ -870,30 +1234,21 @@ static void ui_set_codec(AppConfig *cfg, const char *codec)
 {
     if (!cfg) return;
     if (!codec) codec = "h265";
-    if (cfg->video_codec && !strcmp(cfg->video_codec, codec))
-        return;
+    if (cfg->video_codec && !strcmp(cfg->video_codec, codec)) return;
     free(cfg->video_codec);
     cfg->video_codec = strdup(codec);
 }
 
 static void ui_apply_settings_indices(AppConfig *cfg,
-                                      int res_idx,
-                                      int fps_idx,
-                                      int br_idx,
-                                      int codec_idx,
-                                      int log_idx)
+                                      int res_idx, int fps_idx,
+                                      int br_idx,  int codec_idx, int log_idx)
 {
     if (!cfg) return;
-    if (res_idx < 0) res_idx = 1;
-    if (res_idx >= (int)(sizeof(RES_OPTIONS)/sizeof(RES_OPTIONS[0]))) res_idx = 1;
-    if (fps_idx < 0) fps_idx = 1;
-    if (fps_idx >= (int)(sizeof(FPS_OPTIONS)/sizeof(FPS_OPTIONS[0]))) fps_idx = 1;
-    if (br_idx < 0) br_idx = 2;
-    if (br_idx >= (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0]))) br_idx = 2;
-    if (codec_idx < 0) codec_idx = 1;
-    if (codec_idx >= 3) codec_idx = 1;
-    if (log_idx < 0) log_idx = 2;
-    if (log_idx >= 6) log_idx = 2;
+    if (res_idx   < 0 || res_idx   >= (int)(sizeof(RES_OPTIONS)/sizeof(RES_OPTIONS[0]))) res_idx   = 1;
+    if (fps_idx   < 0 || fps_idx   >= (int)(sizeof(FPS_OPTIONS)/sizeof(FPS_OPTIONS[0]))) fps_idx   = 1;
+    if (br_idx    < 0 || br_idx    >= (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0]))) br_idx = 2;
+    if (codec_idx < 0 || codec_idx >= 3) codec_idx = 1;
+    if (log_idx   < 0 || log_idx   >= 6) log_idx   = 2;
 
     cfg->video_width   = RES_OPTIONS[res_idx].w;
     cfg->video_height  = RES_OPTIONS[res_idx].h;
@@ -903,7 +1258,12 @@ static void ui_apply_settings_indices(AppConfig *cfg,
     cfg->log_level = ui_log_level_from_string(LOG_LEVEL_STRS[log_idx]);
 }
 
-static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg, const char *config_path)
+/* ══════════════════════════════════════════════════════════════════════════
+ * Settings event loop
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg,
+                             const char *config_path)
 {
     if (!renderer || !cfg) return;
 
@@ -913,76 +1273,36 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg, const char *
     int codec_idx = ui_find_codec_idx(cfg);
     int log_idx   = ui_find_log_level_idx(cfg);
     int focus     = SET_RESOLUTION;
-
     char msg[256] = {0};
 
-    while (1)
-    {
+    while (1) {
         SDL_Event ev;
-        while (SDL_PollEvent(&ev))
-        {
-            if (ev.type == SDL_QUIT)
-                return;
-
-            if (ev.type == SDL_KEYDOWN)
-            {
+        while (SDL_PollEvent(&ev)) {
+            if (ev.type == SDL_QUIT) return;
+            if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode sym = ev.key.keysym.sym;
+                if (sym == SDLK_ESCAPE || sym == 1073742094) return;
 
-                // Back returns to launcher
-                if (sym == SDLK_ESCAPE || sym == 1073742094 /*WEBOS_KEY_BACK*/)
-                    return;
-
-                if (sym == SDLK_UP)
-                {
-                    if (focus > 0) focus--;
-                }
-                else if (sym == SDLK_DOWN)
-                {
-                    if (focus < SET_RETURN) focus++;
-                }
-                else if (sym == SDLK_LEFT || sym == SDLK_RIGHT || sym == SDLK_RETURN || sym == SDLK_KP_ENTER || sym == SDLK_SPACE)
-                {
-                    bool forward = (sym == SDLK_RIGHT) || (sym == SDLK_RETURN) || (sym == SDLK_KP_ENTER) || (sym == SDLK_SPACE);
+                if      (sym == SDLK_UP   && focus > 0)          focus--;
+                else if (sym == SDLK_DOWN && focus < SET_RETURN) focus++;
+                else {
+                    bool fwd = (sym == SDLK_RIGHT || sym == SDLK_RETURN ||
+                                sym == SDLK_KP_ENTER || sym == SDLK_SPACE);
                     bool changed = false;
+                    int n;
 
-                    if (focus == SET_RESOLUTION) {
-                        int n = (int)(sizeof(RES_OPTIONS)/sizeof(RES_OPTIONS[0]));
-                        res_idx = (res_idx + (forward ? 1 : -1) + n) % n;
-                        changed = true;
-                    } else if (focus == SET_FPS) {
-                        int n = (int)(sizeof(FPS_OPTIONS)/sizeof(FPS_OPTIONS[0]));
-                        fps_idx = (fps_idx + (forward ? 1 : -1) + n) % n;
-                        changed = true;
-                    } else if (focus == SET_BITRATE) {
-                        int n = (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0]));
-                        br_idx = (br_idx + (forward ? 1 : -1) + n) % n;
-                        changed = true;
-                    } else if (focus == SET_CODEC) {
-                        int n = 3;
-                        codec_idx = (codec_idx + (forward ? 1 : -1) + n) % n;
-                        changed = true;
-                    } else if (focus == SET_LOG_LEVEL) {
-                        int n = 6;
-                        log_idx = (log_idx + (forward ? 1 : -1) + n) % n;
-                        changed = true;
-                    } else if (focus == SET_PS5) {
-                        cfg->ps5 = !cfg->ps5;
-                        changed = true;
-                    } else if (focus == SET_HW_DECODER) {
-                        cfg->hw_decode = !cfg->hw_decode;
-                        changed = true;
-                    } else if (focus == SET_WAKE_ON_START) {
-                        cfg->wakeup = !cfg->wakeup;
-                        changed = true;
-                    } else if (focus == SET_SLEEP_ON_EXIT) {
-                        cfg->sleep_on_exit = !cfg->sleep_on_exit;
-                        changed = true;
-                    } else if (focus == SET_RETURN) {
-                        return;
-                    }
+                    if      (focus == SET_RESOLUTION)  { n = (int)(sizeof(RES_OPTIONS)/sizeof(RES_OPTIONS[0])); res_idx   = (res_idx   + (fwd?1:-1) + n) % n; changed = true; }
+                    else if (focus == SET_FPS)          { n = (int)(sizeof(FPS_OPTIONS)/sizeof(FPS_OPTIONS[0])); fps_idx   = (fps_idx   + (fwd?1:-1) + n) % n; changed = true; }
+                    else if (focus == SET_BITRATE)      { n = (int)(sizeof(BITRATE_OPTIONS)/sizeof(BITRATE_OPTIONS[0])); br_idx = (br_idx + (fwd?1:-1) + n) % n; changed = true; }
+                    else if (focus == SET_CODEC)        { codec_idx = (codec_idx + (fwd?1:-1) + 3) % 3; changed = true; }
+                    else if (focus == SET_LOG_LEVEL)    { log_idx   = (log_idx   + (fwd?1:-1) + 6) % 6; changed = true; }
+                    else if (focus == SET_PS5)          { cfg->ps5         = !cfg->ps5;         changed = true; }
+                    else if (focus == SET_HW_DECODER)   { cfg->hw_decode   = !cfg->hw_decode;   changed = true; }
+                    else if (focus == SET_WAKE_ON_START){ cfg->wakeup      = !cfg->wakeup;      changed = true; }
+                    else if (focus == SET_SLEEP_ON_EXIT){ cfg->sleep_on_exit = !cfg->sleep_on_exit; changed = true; }
+                    else if (focus == SET_RETURN)       { return; }
 
-                    if (changed)
-                    {
+                    if (changed) {
                         ui_apply_settings_indices(cfg, res_idx, fps_idx, br_idx, codec_idx, log_idx);
                         if (!ui_write_settings_json(config_path, cfg))
                             snprintf(msg, sizeof(msg), "Failed to write config.json");
@@ -990,281 +1310,216 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg, const char *
                             snprintf(msg, sizeof(msg), "Saved.");
                     }
                 }
-            }
-            else if (ev.type == SDL_CONTROLLERBUTTONDOWN)
-            {
+            } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
-                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE)
-                    return;
+                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) return;
 
-                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
+                SDL_Keycode fake_sym = 0;
+                if      (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP)    fake_sym = SDLK_UP;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)  fake_sym = SDLK_DOWN;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)  fake_sym = SDLK_LEFT;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) fake_sym = SDLK_RIGHT;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A)          fake_sym = SDLK_RETURN;
+
+                if (fake_sym) {
                     SDL_Event fake; memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = SDLK_UP;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
-                    SDL_Event fake; memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = SDLK_DOWN;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
-                    SDL_Event fake; memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = SDLK_LEFT;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
-                    SDL_Event fake; memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = SDLK_RIGHT;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                    SDL_Event fake; memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = SDLK_RETURN;
+                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = fake_sym;
                     SDL_PushEvent(&fake);
                 }
             }
         }
 
-        ui_render_settings_screen(renderer, cfg, focus, msg, res_idx, fps_idx, br_idx, codec_idx, log_idx);
+        ui_render_settings_screen(renderer, cfg, focus, msg,
+                                   res_idx, fps_idx, br_idx, codec_idx, log_idx);
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Main registration / launcher UI
+ * ══════════════════════════════════════════════════════════════════════════ */
 
 UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
                              const char *config_path, ChiakiLog *log)
 {
     (void)log;
 
-    // IP input buffer (pre-filled from config)
+    /* Pre-fill IP from config */
     char ip[64] = {0};
     if (cfg && cfg->host && cfg->host[0])
         snprintf(ip, sizeof(ip), "%s", cfg->host);
 
-    // UI state
-    // Focus mapping:
-    //   Main page:  0 = IP field, 13 = Import, 14 = Connect, 16 = Settings
-    //   Keypad:     1..12 = keypad keys ("1".."9", ".", "0", "DEL"), 15 = Done
-    int focus = 0;
+    /* Focus mapping:
+     *   Main page:  0=IP field, 13=Import, 14=Connect, 16=Settings
+     *   Keypad:     1..12=digit keys, 15=Done
+     */
+    int  focus   = 0;
     bool editing = false;
     char msg[256] = {0};
 
-    // Choose an initial focus
+    /* After returning from a sub-screen (Settings), the TV remote may still
+     * deliver a Back KEYUP or debounce repeat a few ms after we drain the
+     * event queue.  We use a timestamp guard: any Back events that arrive
+     * within this window are silently ignored.  0 = no guard active. */
+    Uint32 back_ignore_until = 0;
+
+    /* Start with Connect focused if already ready */
     if (ui_valid_ipv4(ip) && ui_has_keys(cfg))
         focus = 14;
 
-    // Keep text input enabled for physical keyboards, but don't rely on it.
     SDL_StartTextInput();
 
-    while (1)
-    {
-        // Build a status string showing what keys are present/missing
+    while (1) {
+        /* Build lightweight debug status string */
         char status[256];
         snprintf(status, sizeof(status),
-            "host: %s  ps5: %d  acct: %s  regkey: %s  rpkey: %s  refresh: %s",
+            "host:%s  acct:%s  rk:%s  rpk:%s  rt:%s",
             (cfg && cfg->host) ? cfg->host : "(null)",
-            cfg ? cfg->ps5 : 1,
-            (cfg && cfg->psn_account_id_b64) ? "OK" : "MISSING",
-            (cfg && cfg->registered_key_b64) ? (strlen(cfg->registered_key_b64) >= 8 ? "OK" : "TOO SHORT") : "MISSING",
-            (cfg && cfg->rp_key_b64) ? "OK" : "MISSING",
-            (cfg && cfg->psn_refresh_token) ? "OK" : "(none)");
+            (cfg && cfg->psn_account_id_b64) ? "OK" : "NO",
+            (cfg && cfg->registered_key_b64 && strlen(cfg->registered_key_b64) >= 8) ? "OK" : "NO",
+            (cfg && cfg->rp_key_b64) ? "OK" : "NO",
+            (cfg && cfg->psn_refresh_token) ? "OK" : "none");
+
+        bool has_keys   = ui_has_keys(cfg);
+        bool can_import = ui_valid_ipv4(ip);
+        bool can_connect= ui_valid_ipv4(ip) && has_keys;
 
         SDL_Event ev;
-        while (SDL_PollEvent(&ev))
-        {
-            if (ev.type == SDL_QUIT)
+        while (SDL_PollEvent(&ev)) {
+            /* On webOS the system can generate SDL_QUIT for a Back press.
+             * Guard it the same way so a QUIT from the Settings sub-screen
+             * doesn't immediately kill the parent launcher loop. */
+            if (ev.type == SDL_QUIT) {
+                if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
+                    continue;
                 return UI_RESULT_QUIT;
+            }
 
-            if (ev.type == SDL_KEYDOWN)
-            {
+            if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode sym = ev.key.keysym.sym;
 
-                // Quit / Back keys
-                if (sym == SDLK_AC_HOME)
-                    return UI_RESULT_QUIT;
-                if (sym == SDLK_ESCAPE || sym == 1073742094 /*WEBOS_KEY_BACK*/)
-                {
-                    if (editing) {
-                        editing = false;
-                        focus = 0;
+                /* Global exit keys */
+                if (sym == SDLK_AC_HOME) return UI_RESULT_QUIT;
+                if (sym == SDLK_ESCAPE || sym == 1073742094 /*WEBOS_KEY_BACK*/) {
+                    if (editing) { editing = false; focus = 0; continue; }
+                    /* Ignore ALL lingering Back events within the guard window.
+                     * Don't clear the guard here — a single Back press on webOS
+                     * can generate multiple SDL events (KEYDOWN + CONTROLLERBUTTONDOWN,
+                     * debounce repeats, etc.).  The guard expires naturally. */
+                    if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
                         continue;
-                    }
                     return UI_RESULT_QUIT;
                 }
 
-                // Navigation
-                if (sym == SDLK_UP)
-                {
-                    if (editing)
-                    {
-                        if (focus >= 1 && focus <= 12)
-                        {
-                            int idx = focus - 1;
-                            int row = idx / 3;
+                /* Navigation */
+                if (sym == SDLK_UP) {
+                    if (editing) {
+                        if (focus >= 1 && focus <= 12) {
+                            int row = (focus - 1) / 3;
                             if (row > 0) focus -= 3;
+                        } else if (focus == 15) {
+                            focus = 10; /* "0" key */
                         }
-                        else if (focus == 15)
-                        {
-                            focus = 11; // "0" key
+                    } else {
+                        if (focus == 13 || focus == 14) focus = 0;
+                        else if (focus == 16)            focus = 13;
+                    }
+                } else if (sym == SDLK_DOWN) {
+                    if (editing) {
+                        if (focus >= 1 && focus <= 12) {
+                            int row = (focus - 1) / 3;
+                            if (row == 3) focus = 15;
+                            else          focus += 3;
                         }
+                    } else {
+                        if (focus == 0)               focus = 13;
+                        else if (focus == 13 || focus == 14) focus = 16;
                     }
-                    else
-                    {
-                        if (focus == 13 || focus == 14)
-                            focus = 0;
-                        else if (focus == 16)
-                            focus = 13;
-                    }
-                }
-                else if (sym == SDLK_DOWN)
-                {
-                    if (editing)
-                    {
-                        if (focus >= 1 && focus <= 12)
-                        {
-                            int idx = focus - 1;
-                            int row = idx / 3;
-                            if (row == 3) focus = 15; // Done
-                            else focus += 3;
+                } else if (sym == SDLK_LEFT) {
+                    if (editing) {
+                        if (focus >= 1 && focus <= 12) {
+                            int col = (focus - 1) % 3;
+                            if (col > 0) focus--;
                         }
-                        // Done stays
-                    }
-                    else
-                    {
-                        if (focus == 0)
-                            focus = 13;
-                        else if (focus == 13 || focus == 14)
-                            focus = 16;
-                    }
-                }
-                else if (sym == SDLK_LEFT)
-                {
-                    if (editing)
-                    {
-                        if (focus >= 1 && focus <= 12)
-                        {
-                            int idx = focus - 1;
-                            int col = idx % 3;
-                            if (col > 0) focus -= 1;
-                        }
-                    }
-                    else
-                    {
+                    } else {
                         if (focus == 14) focus = 13;
                     }
-                }
-                else if (sym == SDLK_RIGHT)
-                {
-                    if (editing)
-                    {
-                        if (focus >= 1 && focus <= 12)
-                        {
-                            int idx = focus - 1;
-                            int col = idx % 3;
-                            if (col < 2) focus += 1;
+                } else if (sym == SDLK_RIGHT) {
+                    if (editing) {
+                        if (focus >= 1 && focus <= 12) {
+                            int col = (focus - 1) % 3;
+                            if (col < 2) focus++;
                         }
-                    }
-                    else
-                    {
+                    } else {
                         if (focus == 13) focus = 14;
                     }
                 }
 
-                // Physical keyboard editing (when IP field or keypad is focused)
-                if (focus == 0 || editing)
-                {
+                /* Physical keyboard IP entry */
+                if (focus == 0 || editing) {
                     size_t len = strlen(ip);
-                    if (sym == SDLK_BACKSPACE)
-                    {
+                    if (sym == SDLK_BACKSPACE) {
                         if (len > 0) ip[len - 1] = '\0';
-                    }
-                    else if ((sym >= SDLK_0 && sym <= SDLK_9) ||
-                             (sym >= SDLK_KP_0 && sym <= SDLK_KP_9) ||
-                             sym == SDLK_PERIOD || sym == SDLK_KP_PERIOD)
-                    {
-                        if (len + 1 < sizeof(ip))
-                        {
+                    } else if ((sym >= SDLK_0 && sym <= SDLK_9) ||
+                               (sym >= SDLK_KP_0 && sym <= SDLK_KP_9) ||
+                               sym == SDLK_PERIOD || sym == SDLK_KP_PERIOD) {
+                        if (len + 1 < sizeof(ip)) {
                             char c;
-                            if (sym == SDLK_PERIOD || sym == SDLK_KP_PERIOD) c = '.';
-                            else if (sym >= SDLK_0 && sym <= SDLK_9) c = (char)('0' + (sym - SDLK_0));
-                            else c = (char)('0' + (sym - SDLK_KP_0));
-
-                            ip[len] = c;
-                            ip[len + 1] = '\0';
+                            if      (sym == SDLK_PERIOD || sym == SDLK_KP_PERIOD) c = '.';
+                            else if (sym >= SDLK_0 && sym <= SDLK_9)              c = '0' + (char)(sym - SDLK_0);
+                            else                                                   c = '0' + (char)(sym - SDLK_KP_0);
+                            ip[len] = c; ip[len + 1] = '\0';
                         }
                     }
                 }
 
-                // Activate
-                if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER || sym == SDLK_SPACE)
-                {
-                    if (editing && focus >= 1 && focus <= 12)
-                    {
-                        // Keypad key
-                        int idx = focus - 1;
-                        static const char *keys2[12] = {
+                /* Select / Activate */
+                if (sym == SDLK_RETURN || sym == SDLK_KP_ENTER || sym == SDLK_SPACE) {
+                    if (editing && focus >= 1 && focus <= 12) {
+                        /* Keypad digit press */
+                        static const char *K[12] = {
                             "1","2","3","4","5","6","7","8","9",".","0","DEL"
                         };
-                        const char *k = keys2[idx];
-
+                        const char *k = K[focus - 1];
                         size_t len = strlen(ip);
-                        if (!strcmp(k, "DEL"))
-                        {
+                        if (!strcmp(k, "DEL")) {
                             if (len > 0) ip[len - 1] = '\0';
+                        } else if (len + 1 < sizeof(ip)) {
+                            char c = k[0];
+                            if (c == '.' || (c >= '0' && c <= '9'))
+                                { ip[len] = c; ip[len + 1] = '\0'; }
                         }
-                        else
-                        {
-                            if (len + 1 < sizeof(ip))
-                            {
-                                char c = k[0];
-                                if (c == '.' || (c >= '0' && c <= '9'))
-                                {
-                                    ip[len] = c;
-                                    ip[len + 1] = '\0';
-                                }
-                            }
-                        }
-                    }
-                    else if (editing && focus == 15)
-                    {
-                        // Done
-                        editing = false;
-                        focus = 0;
-                    }
-                    else if (!editing && focus == 0)
-                    {
-                        // Enter keypad
-                        editing = true;
-                        focus = 1;
-                    }
-                    else if (!editing && focus == 13)
-                    {
-                        // Import
+                    } else if (editing && focus == 15) {
+                        editing = false; focus = 0;
+                    } else if (!editing && focus == 0) {
+                        editing = true; focus = 1;
+                    } else if (!editing && focus == 13) {
+                        /* Import Config */
                         if (!ui_valid_ipv4(ip)) {
-                            snprintf(msg, sizeof(msg), "Enter a valid PS5 IPv4 address first.");
-                            focus = 0;
-                            continue;
+                            snprintf(msg, sizeof(msg), "Enter a valid PS5 IP address first.");
+                            focus = 0; continue;
                         }
-
                         if (!ui_write_host(config_path, ip)) {
-                            snprintf(msg, sizeof(msg), "Failed to write host into config.json");
+                            snprintf(msg, sizeof(msg), "Failed to write host to config.json");
                             continue;
                         }
-
                         char ini_path[512];
                         ui_build_ini_path(config_path, ini_path, sizeof(ini_path));
-
-                        ChiakiImportResult r = config_try_import_chiaki_ini(ini_path, config_path);
-                        switch (r)
-                        {
+                        ChiakiImportResult res = config_try_import_chiaki_ini(ini_path, config_path);
+                        switch (res) {
                         case CI_FILE_NOT_FOUND:
-                            snprintf(msg, sizeof(msg), "chiaki-ng-Default.ini not found on TV. Copy it then try again.");
+                            snprintf(msg, sizeof(msg), "chiaki-ng-Default.ini not found. Copy it to the TV first.");
                             break;
                         case CI_PARSE_ERROR:
-                            snprintf(msg, sizeof(msg), "Import failed: could not parse chiaki-ng INI");
+                            snprintf(msg, sizeof(msg), "Import failed: could not parse chiaki-ng INI.");
                             break;
                         case CI_WRITE_ERROR:
-                            snprintf(msg, sizeof(msg), "Import failed: could not write config.json");
+                            snprintf(msg, sizeof(msg), "Import failed: could not write config.json.");
                             break;
                         case CI_SUCCESS:
                         case CI_SUCCESS_NEEDS_HOST:
-                            snprintf(msg, sizeof(msg), "Import OK. Press Connect.");
+                            snprintf(msg, sizeof(msg), "Import OK.  Press Connect.");
                             ui_reload_cfg(cfg, config_path);
                             if (cfg && cfg->host && cfg->host[0])
                                 snprintf(ip, sizeof(ip), "%s", cfg->host);
@@ -1272,115 +1527,89 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
                                 focus = 14;
                             break;
                         default:
-                            snprintf(msg, sizeof(msg), "Import finished.");
+                            snprintf(msg, sizeof(msg), "Import complete.");
                             ui_reload_cfg(cfg, config_path);
                             break;
                         }
-                    }
-                    else if (!editing && focus == 16)
-                    {
-                        // Settings
+                    } else if (!editing && focus == 16) {
+                        /* Settings */
                         ui_run_settings(renderer, cfg, config_path);
-                        // Reload to reflect any changes + keep memory ownership consistent
+                        /* After settings returns (via Back/B), absorb ALL
+                         * lingering copies of that key press.  On webOS the
+                         * remote and hidd daemon can deliver KEYUP, debounce
+                         * repeats, or parallel CONTROLLERBUTTONDOWN events up
+                         * to ~200ms after the initial press.
+                         *
+                         * Strategy:
+                         *   1. Brief delay so late events land in the queue
+                         *   2. Drain everything currently queued
+                         *   3. Timestamp guard catches anything arriving after
+                         *      the drain — stays active for the full window
+                         *      (NOT cleared on first catch) */
+                        SDL_Delay(120);
+                        SDL_PumpEvents();
+                        { SDL_Event _drain; while (SDL_PollEvent(&_drain)) {} }
+                        back_ignore_until = SDL_GetTicks() + 500;
                         ui_reload_cfg(cfg, config_path);
                         if (cfg && cfg->host && cfg->host[0])
                             snprintf(ip, sizeof(ip), "%s", cfg->host);
                         snprintf(msg, sizeof(msg), "Settings updated.");
-                        if (ui_has_keys(cfg) && ui_valid_ipv4(ip))
-                            focus = 14;
-                        else
-                            focus = 0;
-                    }
-                    else if (!editing && focus == 14)
-                    {
-                        // Connect
+                        focus = (ui_has_keys(cfg) && ui_valid_ipv4(ip)) ? 14 : 0;
+                    } else if (!editing && focus == 14) {
+                        /* Connect */
                         if (!ui_valid_ipv4(ip)) {
-                            snprintf(msg, sizeof(msg), "Enter a valid PS5 IPv4 address.");
-                            focus = 0;
-                            continue;
+                            snprintf(msg, sizeof(msg), "Enter a valid PS5 IP address.");
+                            focus = 0; continue;
                         }
-
                         if (!ui_write_host(config_path, ip)) {
-                            snprintf(msg, sizeof(msg), "Failed to save host into config.json");
+                            snprintf(msg, sizeof(msg), "Failed to save host to config.json");
                             continue;
                         }
                         ui_reload_cfg(cfg, config_path);
-
                         if (!ui_has_keys(cfg)) {
-                            snprintf(msg, sizeof(msg), "Missing registration keys. Copy chiaki-ng-Default.ini and press Import Config.");
-                            focus = 13;
-                            continue;
+                            snprintf(msg, sizeof(msg), "Missing registration keys. Import chiaki-ng-Default.ini first.");
+                            focus = 13; continue;
                         }
-
                         return UI_RESULT_CONNECT;
                     }
                 }
-            }
-            else if (ev.type == SDL_TEXTINPUT)
-            {
-                if (focus == 0 || editing)
-                {
-                    const char *t = ev.text.text;
-                    for (const char *p = t; *p; p++)
-                    {
+
+            } else if (ev.type == SDL_TEXTINPUT) {
+                if (focus == 0 || editing) {
+                    for (const char *p = ev.text.text; *p; p++) {
                         char c = *p;
-                        if (!(isdigit((unsigned char)c) || c == '.'))
-                            continue;
+                        if (!(isdigit((unsigned char)c) || c == '.')) continue;
                         size_t len = strlen(ip);
-                        if (len + 1 < sizeof(ip)) {
-                            ip[len] = c;
-                            ip[len + 1] = '\0';
-                        }
+                        if (len + 1 < sizeof(ip)) { ip[len] = c; ip[len + 1] = '\0'; }
                     }
                 }
-            }
-            else if (ev.type == SDL_CONTROLLERBUTTONDOWN)
-            {
+            } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
-                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE)
-                {
-                    if (editing) {
-                        editing = false;
-                        focus = 0;
+                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) {
+                    if (editing) { editing = false; focus = 0; continue; }
+                    /* Same guard as the KEYDOWN path — on webOS, gamepad B
+                     * generates BOTH a CONTROLLERBUTTONDOWN and a WEBOS_KEY_BACK.
+                     * One exits the sub-screen, the other leaks here. */
+                    if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
                         continue;
-                    }
                     return UI_RESULT_QUIT;
                 }
-
-                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
-                    SDL_Event fake;
-                    memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN;
-                    fake.key.keysym.sym = SDLK_UP;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
-                    SDL_Event fake;
-                    memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN;
-                    fake.key.keysym.sym = SDLK_DOWN;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT ||
-                           ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
-                    SDL_Event fake;
-                    memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN;
-                    fake.key.keysym.sym = (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) ? SDLK_LEFT : SDLK_RIGHT;
-                    SDL_PushEvent(&fake);
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                    // Treat like Enter
-                    SDL_Event fake;
-                    memset(&fake, 0, sizeof(fake));
-                    fake.type = SDL_KEYDOWN;
-                    fake.key.keysym.sym = SDLK_RETURN;
+                SDL_Keycode fake_sym = 0;
+                if      (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP)    fake_sym = SDLK_UP;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN)  fake_sym = SDLK_DOWN;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT)  fake_sym = SDLK_LEFT;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) fake_sym = SDLK_RIGHT;
+                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A)          fake_sym = SDLK_RETURN;
+                if (fake_sym) {
+                    SDL_Event fake; memset(&fake, 0, sizeof(fake));
+                    fake.type = SDL_KEYDOWN; fake.key.keysym.sym = fake_sym;
                     SDL_PushEvent(&fake);
                 }
             }
         }
 
-        bool can_import = ui_valid_ipv4(ip);
-        bool can_connect = ui_valid_ipv4(ip) && ui_has_keys(cfg);
-
-        render_setup_screen(renderer, status, ip, focus, msg, can_import, can_connect, editing);
+        render_setup_screen(renderer, status, ip, focus, msg,
+                             has_keys, can_import, can_connect, editing);
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
     }
