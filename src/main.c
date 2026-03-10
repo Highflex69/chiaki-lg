@@ -1447,13 +1447,6 @@ int main(int argc, char *argv[])
         // ── Per-session event loop ────────────────────────────────────────────
         SDL_Event ev;
 
-        // Hold UP on the TV remote to toggle the stats overlay.
-        // Short press UP is forwarded to the PS5 as a tap (DOWN+UP) on release.
-        bool up_pending = false;
-        uint32_t up_down_ms = 0;
-        const uint32_t up_hold_ms = 500;
-
-        // hold UP to toggle stats overlay
         while (!g_session_ended && !g_should_exit)
         {
             while (SDL_PollEvent(&ev))
@@ -1479,42 +1472,44 @@ int main(int argc, char *argv[])
                     g_session_ended = true;
                     break;
                 }
-                // Intercept TV remote UP for overlay toggle (hold)
+                // ── Block TV remote navigation keys during streaming ─────────
+                // During an active stream, the TV remote should not send any
+                // input to the PS5 — only the gamepad (via evdev in input.c)
+                // controls the console.  Remote keys we handle here:
+                //   UP (short press) → toggle stats overlay
+                //   All other nav keys → swallowed silently
+                // Volume, Power, Mute are handled by webOS at the system level
+                // and never arrive as SDL events.  Back and Home are handled
+                // above before this block.
                 if (g_have_video_frame && (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP))
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
-                    bool is_up = (k == SDLK_UP || (int)k == 1073741906); // WEBOS_KEY_UP
-                    if (is_up)
+                    bool is_up = (k == SDLK_UP || (int)k == 1073741906);    // WEBOS_KEY_UP
+
+                    // Block ALL remote directional / navigation keys from
+                    // reaching the PS5.  Gamepad D-pad is handled exclusively
+                    // through the evdev reader thread in input.c.
+                    bool is_remote_nav = is_up
+                        || k == SDLK_DOWN   || (int)k == 1073741905   // WEBOS_KEY_DOWN
+                        || k == SDLK_LEFT   || (int)k == 1073741904   // WEBOS_KEY_LEFT
+                        || k == SDLK_RIGHT  || (int)k == 1073741903   // WEBOS_KEY_RIGHT
+                        || k == SDLK_RETURN || (int)k == 1073741912   // WEBOS_KEY_ENTER / OK
+                        || (int)k == 1073742093                        // WEBOS_KEY_RED
+                        || (int)k == 1073742089                        // WEBOS_KEY_GREEN
+                        || (int)k == 1073742090                        // WEBOS_KEY_YELLOW
+                        || (int)k == 1073742091;                       // WEBOS_KEY_BLUE
+
+                    if (is_remote_nav)
                     {
-                        if (ev.type == SDL_KEYDOWN && !ev.key.repeat)
+                        // Toggle stats overlay on short press of UP (KEYDOWN, no repeat)
+                        if (is_up && ev.type == SDL_KEYDOWN && !ev.key.repeat)
                         {
-                            up_pending = true;
-                            up_down_ms = SDL_GetTicks();
-                            continue; // defer forwarding until KEYUP
+                            stats_overlay_toggle(&stats_overlay);
+                            app_log_always("[UI] Stats overlay %s (UP to toggle)\n",
+                                           stats_overlay.enabled ? "ON" : "OFF");
                         }
-                        if (ev.type == SDL_KEYUP && up_pending)
-                        {
-                            up_pending = false;
-                            uint32_t held = (uint32_t)(SDL_GetTicks() - up_down_ms);
-                            if (held >= up_hold_ms)
-                            {
-                                stats_overlay_toggle(&stats_overlay);
-                                app_log("[UI] Stats overlay %s (hold UP to toggle)\n",
-                                        stats_overlay.enabled ? "ON" : "OFF");
-                            }
-                            else
-                            {
-                                // Forward a tap to the PS5 (DOWN+UP)
-                                SDL_Event e1 = ev;
-                                SDL_Event e2 = ev;
-                                e1.type = SDL_KEYDOWN;
-                                e1.key.repeat = 0;
-                                e2.type = SDL_KEYUP;
-                                input_handle_event(&e1, input_ctx, &g_session);
-                                input_handle_event(&e2, input_ctx, &g_session);
-                            }
-                            continue;
-                        }
+                        // Swallow all remote nav keys — don't forward to PS5
+                        continue;
                     }
                 }
                 input_handle_event(&ev, input_ctx, &g_session);
