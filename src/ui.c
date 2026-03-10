@@ -716,6 +716,47 @@ void ui_render_stats_overlay(SDL_Renderer *r, const char *text)
     draw_text(r, x + pad, y + pad, text, scale);
 }
 
+// ── Startup hint overlay ─────────────────────────────────────────────────────
+// Small semi-transparent hint shown briefly after the stream starts.
+
+void ui_render_hint(SDL_Renderer *r, const char *text, float opacity)
+{
+    if(!r || !text || !text[0] || opacity <= 0.0f)
+        return;
+
+    int w = SCREEN_W, h = SCREEN_H;
+    (void)SDL_GetRendererOutputSize(r, &w, &h);
+
+    const int scale = 2;
+    const int pad = 12;
+    const int line_h = 9 * scale;
+
+    // Measure text width
+    int tw = 0;
+    for(const char *p = text; *p; p++)
+        tw += 6 * scale;
+
+    int box_w = tw + pad * 2;
+    int box_h = line_h + pad * 2;
+    int x = 20;
+    int y = 20;
+
+    uint8_t alpha = (uint8_t)(170.0f * (opacity > 1.0f ? 1.0f : opacity));
+
+    // Semi-transparent background pill
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    set_color(r, 0, 0, 0, alpha);
+    fill_rounded_rect(r, x, y, box_w, box_h, 10);
+
+    // Accent bar
+    set_color(r, 0x00, 0x37, 0x91, alpha);
+    fill_rect(r, x, y, 4, box_h);
+
+    // Text
+    set_color(r, 255, 255, 255, alpha);
+    draw_text(r, x + pad, y + pad, text, scale);
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
 
 static bool ui_has_keys(const AppConfig *cfg)

@@ -1447,6 +1447,10 @@ int main(int argc, char *argv[])
         // ── Per-session event loop ────────────────────────────────────────────
         SDL_Event ev;
 
+        // Track when the first video frame arrives so we can show a
+        // brief startup hint ("Press UP for stats overlay").
+        uint32_t stream_start_ms = 0;
+
         while (!g_session_ended && !g_should_exit)
         {
             while (SDL_PollEvent(&ev))
@@ -1526,6 +1530,10 @@ int main(int argc, char *argv[])
             }
             else
             {
+                // Capture the moment the first video frame appeared.
+                if (stream_start_ms == 0)
+                    stream_start_ms = SDL_GetTicks();
+
                 // Present a transparent frame each tick.
                 // This does two things: (1) keeps the webOS compositor seeing
                 // active frame production so it won't terminate the app for
@@ -1549,6 +1557,23 @@ int main(int argc, char *argv[])
                 stats_overlay_update(&stats_overlay, &g_stream_stats, SDL_GetTicks());
                 if (stats_overlay.enabled)
                     ui_render_stats_overlay(g_renderer, stats_overlay.text);
+
+                // Show a brief startup hint for 6 seconds (with 1s fade-out)
+                // so users know they can press UP for the stats overlay.
+                // Skip the hint if the stats overlay is already visible.
+                if (!stats_overlay.enabled && stream_start_ms != 0)
+                {
+                    const uint32_t hint_duration_ms = 6000;
+                    const uint32_t fade_ms = 1000;
+                    uint32_t elapsed = (uint32_t)(SDL_GetTicks() - stream_start_ms);
+                    if (elapsed < hint_duration_ms)
+                    {
+                        float opacity = 1.0f;
+                        if (elapsed > hint_duration_ms - fade_ms)
+                            opacity = (float)(hint_duration_ms - elapsed) / (float)fade_ms;
+                        ui_render_hint(g_renderer, "Press UP on remote for stream stats", opacity);
+                    }
+                }
 
                 SDL_RenderPresent(g_renderer);
                 SDL_Delay(4);   // ~250Hz loop; keeps compositor alive without adding input latency

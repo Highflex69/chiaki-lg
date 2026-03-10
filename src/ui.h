@@ -26,3 +26,6 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
 // Draw a semi-transparent stats overlay on top of the current frame.
 // This draws, but does NOT call SDL_RenderPresent().
 void ui_render_stats_overlay(SDL_Renderer *renderer, const char *text);
+
+// Draw temporary pop up at launch for stats overlay
+void ui_render_hint(SDL_Renderer *r, const char *text, float opacity);
