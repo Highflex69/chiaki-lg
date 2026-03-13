@@ -41,6 +41,12 @@
 #define FOOTER_Y    (CONTENT_Y + CONTENT_H + 22)   /* 862 */
 #define FOOTER_H    62
 
+/* webOS remote keys we can actually use inside this native SDL UI.
+ * BACK is often intercepted by webOS before SDL sees it on newer TVs,
+ * so RED is offered as an in-app fallback "Return" key. */
+#define WEBOS_KEY_BACK 1073742094
+#define WEBOS_KEY_RED  403
+
 /* ── Colour palette (R,G,B,A) ─────────────────────────────────────────────── */
 
 /* Backgrounds */
@@ -724,10 +730,10 @@ static void render_setup_screen(SDL_Renderer *r, const char *status,
     set_color(r, COL_TEXT_FAINT);
     if (show_keypad) {
         draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
-            "ARROWS: Move keypad   OK: Type digit   BACK: Close keypad", 2);
+            "ARROWS: Move keypad   OK: Type digit   RED/BACK: Close keypad", 2);
     } else {
         draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
-            "ARROWS: Navigate   OK: Select / Edit IP   BACK: Exit", 2);
+            "ARROWS: Navigate   OK: Select / Edit IP   RED: Return / Exit", 2);
     }
 
     /* Debug key-status — very small, bottom-left corner */
@@ -988,7 +994,7 @@ static void ui_render_settings_screen(SDL_Renderer *r,
     hline(r, 0, FOOTER_Y, SCREEN_W);
     set_color(r, COL_TEXT_FAINT);
     draw_text_centered(r, SCREEN_W / 2, FOOTER_Y + (FOOTER_H - 14) / 2,
-        "UP/DOWN: Navigate   LEFT/RIGHT: Change value   BACK: Return", 2);
+        "UP/DOWN: Navigate   LEFT/RIGHT: Change value   RED: Return", 2);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1275,13 +1281,15 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg,
     int focus     = SET_RESOLUTION;
     char msg[256] = {0};
 
+    bool wants_exit = false;
+
     while (1) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            if (ev.type == SDL_QUIT) return;
+            if (ev.type == SDL_QUIT) { wants_exit = true; continue; }
             if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode sym = ev.key.keysym.sym;
-                if (sym == SDLK_ESCAPE || sym == 1073742094) return;
+                if (sym == SDLK_ESCAPE || sym == WEBOS_KEY_BACK || sym == WEBOS_KEY_RED) { wants_exit = true; continue; }
 
                 if      (sym == SDLK_UP   && focus > 0)          focus--;
                 else if (sym == SDLK_DOWN && focus < SET_RETURN) focus++;
@@ -1300,7 +1308,7 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg,
                     else if (focus == SET_HW_DECODER)   { cfg->hw_decode   = !cfg->hw_decode;   changed = true; }
                     else if (focus == SET_WAKE_ON_START){ cfg->wakeup      = !cfg->wakeup;      changed = true; }
                     else if (focus == SET_SLEEP_ON_EXIT){ cfg->sleep_on_exit = !cfg->sleep_on_exit; changed = true; }
-                    else if (focus == SET_RETURN)       { return; }
+                    else if (focus == SET_RETURN)       { wants_exit = true; continue; }
 
                     if (changed) {
                         ui_apply_settings_indices(cfg, res_idx, fps_idx, br_idx, codec_idx, log_idx);
@@ -1312,7 +1320,7 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg,
                 }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
-                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) return;
+                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) { wants_exit = true; continue; }
 
                 SDL_Keycode fake_sym = 0;
                 if      (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP)    fake_sym = SDLK_UP;
@@ -1327,6 +1335,16 @@ static void ui_run_settings(SDL_Renderer *renderer, AppConfig *cfg,
                     SDL_PushEvent(&fake);
                 }
             }
+        }
+
+        /* If Back/B/Return was pressed, finish draining the current event
+         * batch, wait for any companion events, drain again, then return
+         * cleanly to the launcher. */
+        if (wants_exit) {
+            SDL_Delay(150);
+            SDL_PumpEvents();
+            { SDL_Event _d; while (SDL_PollEvent(&_d)) {} }
+            return;
         }
 
         ui_render_settings_screen(renderer, cfg, focus, msg,
@@ -1358,12 +1376,6 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
     bool editing = false;
     char msg[256] = {0};
 
-    /* After returning from a sub-screen (Settings), the TV remote may still
-     * deliver a Back KEYUP or debounce repeat a few ms after we drain the
-     * event queue.  We use a timestamp guard: any Back events that arrive
-     * within this window are silently ignored.  0 = no guard active. */
-    Uint32 back_ignore_until = 0;
-
     /* Start with Connect focused if already ready */
     if (ui_valid_ipv4(ip) && ui_has_keys(cfg))
         focus = 14;
@@ -1387,28 +1399,15 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
-            /* On webOS the system can generate SDL_QUIT for a Back press.
-             * Guard it the same way so a QUIT from the Settings sub-screen
-             * doesn't immediately kill the parent launcher loop. */
-            if (ev.type == SDL_QUIT) {
-                if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
-                    continue;
-                return UI_RESULT_QUIT;
-            }
+            if (ev.type == SDL_QUIT) return UI_RESULT_QUIT;
 
             if (ev.type == SDL_KEYDOWN) {
                 SDL_Keycode sym = ev.key.keysym.sym;
 
-                /* Global exit keys */
+                /* Back key: close keypad if open, otherwise exit launcher */
                 if (sym == SDLK_AC_HOME) return UI_RESULT_QUIT;
-                if (sym == SDLK_ESCAPE || sym == 1073742094 /*WEBOS_KEY_BACK*/) {
+                if (sym == SDLK_ESCAPE || sym == WEBOS_KEY_BACK || sym == WEBOS_KEY_RED) {
                     if (editing) { editing = false; focus = 0; continue; }
-                    /* Ignore ALL lingering Back events within the guard window.
-                     * Don't clear the guard here — a single Back press on webOS
-                     * can generate multiple SDL events (KEYDOWN + CONTROLLERBUTTONDOWN,
-                     * debounce repeats, etc.).  The guard expires naturally. */
-                    if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
-                        continue;
                     return UI_RESULT_QUIT;
                 }
 
@@ -1532,24 +1531,8 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
                             break;
                         }
                     } else if (!editing && focus == 16) {
-                        /* Settings */
+                        /* Settings — drains Back events internally before returning */
                         ui_run_settings(renderer, cfg, config_path);
-                        /* After settings returns (via Back/B), absorb ALL
-                         * lingering copies of that key press.  On webOS the
-                         * remote and hidd daemon can deliver KEYUP, debounce
-                         * repeats, or parallel CONTROLLERBUTTONDOWN events up
-                         * to ~200ms after the initial press.
-                         *
-                         * Strategy:
-                         *   1. Brief delay so late events land in the queue
-                         *   2. Drain everything currently queued
-                         *   3. Timestamp guard catches anything arriving after
-                         *      the drain — stays active for the full window
-                         *      (NOT cleared on first catch) */
-                        SDL_Delay(120);
-                        SDL_PumpEvents();
-                        { SDL_Event _drain; while (SDL_PollEvent(&_drain)) {} }
-                        back_ignore_until = SDL_GetTicks() + 500;
                         ui_reload_cfg(cfg, config_path);
                         if (cfg && cfg->host && cfg->host[0])
                             snprintf(ip, sizeof(ip), "%s", cfg->host);
@@ -1587,11 +1570,6 @@ UIResult ui_run_registration(SDL_Renderer *renderer, AppConfig *cfg,
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
                     ev.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE) {
                     if (editing) { editing = false; focus = 0; continue; }
-                    /* Same guard as the KEYDOWN path — on webOS, gamepad B
-                     * generates BOTH a CONTROLLERBUTTONDOWN and a WEBOS_KEY_BACK.
-                     * One exits the sub-screen, the other leaks here. */
-                    if (back_ignore_until && SDL_GetTicks() < back_ignore_until)
-                        continue;
                     return UI_RESULT_QUIT;
                 }
                 SDL_Keycode fake_sym = 0;
