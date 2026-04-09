@@ -4,11 +4,13 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <ss4s.h>
+#include "config.h"
 
 typedef struct VideoContext VideoContext;
 
-VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, int chiaki_codec);
-void          video_fini(VideoContext *ctx);
+VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, int chiaki_codec,
+                         const PerfProfile *profile);
+void video_fini(VideoContext *ctx);
 
 /* Actual ChiakiVideoSampleCallback typedef (confirmed from build error output):
  *   bool (*)(uint8_t *buf, unsigned int buf_size, int codec, bool is_keyframe, void *user)

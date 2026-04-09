@@ -1287,7 +1287,13 @@ int main(int argc, char *argv[])
     }
 
     app_log("[APP] Calling video_init...\n");
-    VideoContext *video_ctx = video_init(ss4s_player, cfg.video_width, cfg.video_height, cfg.video_fps, requested_codec);
+    PerfProfile perf = perf_profile_from_name(cfg.perf_mode);
+    app_log_always("[APP] perf_mode=%s (ndl_thresh=%d buf=%d alpha=%.2f tune=%d..%d chord=%dms loop=%dns)\n",
+                   cfg.perf_mode ? cfg.perf_mode : "balanced",
+                   perf.ndl_drop_threshold, perf.max_buf_depth,
+                   perf.jitter_ema_alpha, perf.auto_tune_min, perf.auto_tune_max,
+                   perf.chord_window_ms, perf.loop_interval_ns);
+    VideoContext *video_ctx = video_init(ss4s_player, cfg.video_width, cfg.video_height, cfg.video_fps, requested_codec, &perf);
     if (!video_ctx)
     {
         app_log("[APP] video_init failed\n");
@@ -1308,7 +1314,7 @@ int main(int argc, char *argv[])
     }
     app_log("[APP] audio_init OK\n");
 
-    InputContext *input_ctx = input_init();
+    InputContext *input_ctx = input_init(perf.chord_window_ms);
 
     // ── Build connect info (done once, reused across reconnects) ──────────────
     ChiakiConnectInfo info;
@@ -1654,13 +1660,12 @@ int main(int argc, char *argv[])
                 SDL_RenderPresent(g_renderer);
 
                 /* ── Precision frame pacer ────────────────────────────────── */
-                /* Instead of SDL_Delay(4) (~250Hz, ±10ms jitter), we use     */
-                /* clock_nanosleep with TIMER_ABSTIME to achieve a steady     */
-                /* ~250Hz (4ms) cadence with sub-ms accuracy.  This keeps the */
-                /* compositor alive and stats overlay smooth without adding    */
-                /* the 1-15ms jitter inherent in SDL_Delay on webOS.          */
+                /* clock_nanosleep with TIMER_ABSTIME for a steady cadence.   */
+                /* Interval is set by the perf profile:                       */
+                /*   fast=2ms (500Hz), balanced/safe=4ms (250Hz).             */
                 {
                     static struct timespec next_tick = {0, 0};
+                    const int interval_ns = perf.loop_interval_ns;
                     struct timespec now;
                     clock_gettime(CLOCK_MONOTONIC, &now);
 
@@ -1670,8 +1675,7 @@ int main(int argc, char *argv[])
                         next_tick = now;
                     }
 
-                    /* Advance by 4ms (4,000,000 ns). */
-                    next_tick.tv_nsec += 4000000;
+                    next_tick.tv_nsec += interval_ns;
                     if (next_tick.tv_nsec >= 1000000000)
                     {
                         next_tick.tv_nsec -= 1000000000;
@@ -1684,7 +1688,7 @@ int main(int argc, char *argv[])
                     if (ahead_ns < 0)
                     {
                         next_tick = now;
-                        next_tick.tv_nsec += 4000000;
+                        next_tick.tv_nsec += interval_ns;
                         if (next_tick.tv_nsec >= 1000000000)
                         {
                             next_tick.tv_nsec -= 1000000000;

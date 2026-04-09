@@ -90,7 +90,8 @@ static int query_ndl_buf_depth(void)
 #endif
 }
 
-VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, int chiaki_codec)
+VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, int chiaki_codec,
+                         const PerfProfile *profile)
 {
     VideoContext *ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
@@ -102,7 +103,12 @@ VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, in
     ctx->use_h265 = (chiaki_codec == CHIAKI_CODEC_H265 || chiaki_codec == CHIAKI_CODEC_H265_HDR);
     ctx->fps = fps;
     ctx->expected_interval_us = (fps > 0) ? (1000000LL / fps) : 16667LL;
-    ctx->max_buf_depth = MAX_NDL_BUF_DEPTH_DEFAULT;
+
+    /* Apply profile */
+    ctx->max_buf_depth = profile->max_buf_depth;
+    ctx->jitter_ema_alpha = profile->jitter_ema_alpha;
+    ctx->auto_tune_min = profile->auto_tune_min;
+    ctx->auto_tune_max = profile->auto_tune_max;
 
     // Stats overlay format hint (also updated from callback codec)
     stats_set_video_format(&g_stream_stats, width, height, fps, chiaki_codec);
@@ -130,15 +136,22 @@ VideoContext *video_init(SS4S_Player *player, int width, int height, int fps, in
     /* ── NDL low-latency configuration ──────────────────────────────────── */
 #ifdef HAVE_NDL_DIRECTMEDIA
     /* Tell NDL to drop frames when the render buffer gets too deep.
-     * A threshold of 1 means "keep at most 1 frame queued" — the most
-     * aggressive setting.  Combined with feeding PTS=0 (which SS4S does
-     * by default for game streaming), this effectively disables the A/V
-     * synchroniser and puts NDL into free-run / low-latency mode. */
-    if (NDL_DirectVideoSetFrameDropThreshold(1) != 0)
-        app_log("[VIDEO/NDL] SetFrameDropThreshold(1) failed — non-fatal\n");
+     * The threshold is driven by the performance profile:
+     *   fast=1 (most aggressive), balanced=2, safe=4 (NDL manages pacing).
+     * Combined with feeding PTS=0 (which SS4S does by default for game
+     * streaming), a low threshold effectively disables the A/V synchroniser
+     * and puts NDL into free-run / low-latency mode. */
+    if (NDL_DirectVideoSetFrameDropThreshold(profile->ndl_drop_threshold) != 0)
+        app_log("[VIDEO/NDL] SetFrameDropThreshold(%d) failed — non-fatal\n",
+                profile->ndl_drop_threshold);
     else
-        app_log("[VIDEO/NDL] SetFrameDropThreshold(1) OK — A/V sync disabled\n");
+        app_log("[VIDEO/NDL] SetFrameDropThreshold(%d) OK\n",
+                profile->ndl_drop_threshold);
 #endif
+
+    app_log("[VIDEO] perf profile: buf_depth=%d ndl_thresh=%d alpha=%.2f tune=%d..%d\n",
+            ctx->max_buf_depth, profile->ndl_drop_threshold,
+            ctx->jitter_ema_alpha, ctx->auto_tune_min, ctx->auto_tune_max);
 
     ctx->opened = true;
     return ctx;
@@ -176,7 +189,7 @@ bool video_sample_cb(uint8_t *buf, unsigned int buf_size, int codec, bool is_key
         int64_t abs_dev = deviation < 0 ? -deviation : deviation;
 
         /* EMA update */
-        ctx->jitter_ema_us = ctx->jitter_ema_us * (1.0 - JITTER_EMA_ALPHA) + (double)abs_dev * JITTER_EMA_ALPHA;
+        ctx->jitter_ema_us = ctx->jitter_ema_us * (1.0 - ctx->jitter_ema_alpha) + (double)abs_dev * ctx->jitter_ema_alpha;
 
         /* Window max */
         if (abs_dev > ctx->jitter_window_max_us)
@@ -219,9 +232,9 @@ bool video_sample_cb(uint8_t *buf, unsigned int buf_size, int codec, bool is_key
         /* Adapt max_buf_depth based on observed jitter.
          * High jitter (>3ms) → allow slightly deeper buffer to absorb variance.
          * Low jitter (<1ms) → tighten to minimum for lowest latency. */
-        if (ctx->tune_avg_jitter_us > 3000.0 && ctx->max_buf_depth < 4)
+        if (ctx->tune_avg_jitter_us > 3000.0 && ctx->max_buf_depth < ctx->auto_tune_max)
             ctx->max_buf_depth++;
-        else if (ctx->tune_avg_jitter_us < 1000.0 && ctx->max_buf_depth > 1)
+        else if (ctx->tune_avg_jitter_us < 1000.0 && ctx->max_buf_depth > ctx->auto_tune_min)
             ctx->max_buf_depth--;
 
         if (ctx->frame_count > 0 && ctx->frame_count % (AUTO_TUNE_INTERVAL * 10) == 0)

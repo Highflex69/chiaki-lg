@@ -64,10 +64,11 @@
 
 // ── Touchpad chord: Select+Start → Touchpad (for Xbox controllers) ──────────
 // When Select or Start is pressed alone, we defer emitting SHARE/OPTIONS for
-// up to CHORD_WINDOW_MS to see if the other button follows.  If both arrive
+// up to chord_window_ms to see if the other button follows.  If both arrive
 // within the window → emit TOUCHPAD instead.  BTN_RECORD (Xbox Series capture
 // button) maps directly to TOUCHPAD with no deferral.
-#define CHORD_WINDOW_MS 100
+// Default window (overridden by PerfProfile via input_init):
+#define CHORD_WINDOW_MS_DEFAULT 100
 
 typedef struct
 {
@@ -100,6 +101,7 @@ struct InputContext
     volatile bool running;
 
     ChiakiSession *session;
+    int chord_window_ms;
 };
 
 // ── Normalize evdev ABS value → int16 ─────────────────────────────────────────
@@ -397,7 +399,7 @@ static void *evdev_reader(void *arg)
         for (int i = 0; i < ctx->num_pads; i++)
         {
             ChordState *ch = &ctx->pads[i].chord;
-            if (ch->pending_btn && ms_elapsed(&ch->pending_ts) >= CHORD_WINDOW_MS)
+            if (ch->pending_btn && ms_elapsed(&ch->pending_ts) >= ctx->chord_window_ms)
             {
                 pthread_mutex_lock(&ctx->state_mutex);
                 chord_flush_pending(&ctx->state, ch);
@@ -608,13 +610,13 @@ static void open_gamepads(InputContext *ctx)
     {
         app_log("[INPUT] %d gamepad(s) grabbed exclusively\n", ctx->num_pads);
         app_log("[INPUT] Touchpad: Select+Start chord (%dms window) + BTN_RECORD direct\n",
-                CHORD_WINDOW_MS);
+                ctx->chord_window_ms);
     }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-InputContext *input_init(void)
+InputContext *input_init(int chord_window_ms)
 {
     InputContext *ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
@@ -624,6 +626,7 @@ InputContext *input_init(void)
     pthread_mutex_init(&ctx->state_mutex, NULL);
     ctx->running = true;
     ctx->session = NULL;
+    ctx->chord_window_ms = (chord_window_ms > 0) ? chord_window_ms : CHORD_WINDOW_MS_DEFAULT;
 
     open_gamepads(ctx);
 
