@@ -4,9 +4,10 @@
 #include <chiaki/log.h>
 #include "config.h"
 
-typedef enum {
-    UI_RESULT_CONNECT,      // user chose to connect
-    UI_RESULT_QUIT,         // user dismissed the setup/launcher screen
+typedef enum
+{
+    UI_RESULT_CONNECT, // user chose to connect
+    UI_RESULT_QUIT,    // user dismissed the setup/launcher screen
     UI_RESULT_ERROR,
 } UIResult;
 
@@ -29,3 +30,6 @@ void ui_render_stats_overlay(SDL_Renderer *renderer, const char *text);
 
 // Draw temporary pop up at launch for stats overlay
 void ui_render_hint(SDL_Renderer *r, const char *text, float opacity);
+
+// Draw a brief auto-tuner notification bar at the top of the screen.
+void ui_render_notification(SDL_Renderer *r, const char *text, float opacity);

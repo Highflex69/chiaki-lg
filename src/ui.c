@@ -1325,6 +1325,47 @@ void ui_render_hint(SDL_Renderer *r, const char *text, float opacity)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ * Auto-tuner notification (top-right pill)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+void ui_render_notification(SDL_Renderer *r, const char *text, float opacity)
+{
+    if (!r || !text || !text[0] || opacity <= 0.0f)
+        return;
+
+    int sw = SCREEN_W, sh = SCREEN_H;
+    (void)SDL_GetRendererOutputSize(r, &sw, &sh);
+    (void)sh;
+
+    const int scale = 2;
+    const int pad = 10;
+    int tw = text_width(text, scale);
+
+    int box_w = tw + pad * 2 + 8;
+    int box_h = 7 * scale + pad * 2;
+    int x = sw - box_w - 24; /* top-right corner */
+    int y = 24;
+
+    if (opacity > 1.0f)
+        opacity = 1.0f;
+    uint8_t alpha_bg = (uint8_t)(160.0f * opacity);
+    uint8_t alpha_text = (uint8_t)(255.0f * opacity);
+    uint8_t alpha_acc = (uint8_t)(200.0f * opacity);
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+    set_color(r, 0x0a, 0x14, 0x2a, alpha_bg);
+    fill_rounded_rect(r, x, y, box_w, box_h, box_h / 2);
+
+    /* Orange accent for tuner notifications */
+    set_color(r, 0xff, 0x8c, 0x00, alpha_acc);
+    fill_rect(r, x + box_w - 4, y + 3, 4, box_h - 6);
+
+    set_color(r, 0xff, 0xe0, 0xb0, alpha_text);
+    draw_text(r, x + pad, y + pad, text, scale);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  * Shared helpers (config / validation)
  * ══════════════════════════════════════════════════════════════════════════ */
 

@@ -1182,6 +1182,7 @@ int main(int argc, char *argv[])
     // ── Stats overlay state (toggled at runtime) ─────────────────────────────
     StatsOverlay stats_overlay;
     stats_overlay_init(&stats_overlay);
+    stats_overlay.perf_mode_name = cfg.perf_mode ? cfg.perf_mode : "balanced";
 
     // ── Chiaki logging ───────────────────────────────────────────────────────
     // Pass the configured bitmask so chiaki-ng itself filters at the source.
@@ -1303,7 +1304,7 @@ int main(int argc, char *argv[])
     }
     app_log("[APP] video_init OK\n");
 
-    AudioContext *audio_ctx = audio_init(ss4s_player);
+    AudioContext *audio_ctx = audio_init(ss4s_player, &perf);
     if (!audio_ctx)
     {
         app_log("[APP] audio_init failed\n");
@@ -1379,9 +1380,15 @@ int main(int argc, char *argv[])
         stats_set_video_format(&g_stream_stats, cfg.video_width, cfg.video_height, cfg.video_fps,
                                info.video_profile.codec);
 
-        // Show a minimal loading screen immediately.
-        ui_render_loading(g_renderer, "Connecting");
-        SDL_RenderPresent(g_renderer);
+        // Show a minimal loading screen with connection details.
+        {
+            char loading_msg[128];
+            snprintf(loading_msg, sizeof(loading_msg),
+                     "Connecting to %s (attempt %d)",
+                     cfg.host ? cfg.host : "...", attempt);
+            ui_render_loading(g_renderer, loading_msg);
+            SDL_RenderPresent(g_renderer);
+        }
 
         // ── Wakeup ───────────────────────────────────────────────────────────
         // Send wakeup on the first attempt only.  Poll until the PS5 becomes
@@ -1419,8 +1426,13 @@ int main(int argc, char *argv[])
                 if (g_should_exit)
                     break;
 
-                ui_render_loading(g_renderer, "Waking console");
-                SDL_RenderPresent(g_renderer);
+                {
+                    char wake_msg[128];
+                    snprintf(wake_msg, sizeof(wake_msg),
+                             "Waking %s", cfg.host ? cfg.host : "console");
+                    ui_render_loading(g_renderer, wake_msg);
+                    SDL_RenderPresent(g_renderer);
+                }
 
                 if (SDL_GetTicks() >= next_wakeup)
                 {
@@ -1534,6 +1546,10 @@ int main(int argc, char *argv[])
         // brief startup hint ("Press UP for stats overlay").
         uint32_t stream_start_ms = 0;
 
+        // Auto-tuner notification state
+        uint32_t tune_notify_start_ms = 0;
+        char tune_notify_text[128] = {0};
+
         while (!g_session_ended && !g_should_exit)
         {
             while (SDL_PollEvent(&ev))
@@ -1606,7 +1622,7 @@ int main(int argc, char *argv[])
             // frames so the NDL plane underneath shows through.
             if (!g_have_video_frame)
             {
-                ui_render_loading(g_renderer, "Starting stream");
+                ui_render_loading(g_renderer, "Waiting for video");
                 SDL_RenderPresent(g_renderer);
                 SDL_Delay(16);
             }
@@ -1639,6 +1655,34 @@ int main(int argc, char *argv[])
                 stats_overlay_update(&stats_overlay, &g_stream_stats, SDL_GetTicks());
                 if (stats_overlay.enabled)
                     ui_render_stats_overlay(g_renderer, stats_overlay.text);
+
+                // ── Auto-tuner notification ───────────────────────────────
+                if (atomic_exchange_explicit(&g_stream_stats.auto_tune_changed,
+                                             0, memory_order_acquire))
+                {
+                    int new_depth = atomic_load_explicit(
+                        &g_stream_stats.auto_tune_depth, memory_order_relaxed);
+                    snprintf(tune_notify_text, sizeof(tune_notify_text),
+                             "Tuner: buf depth -> %d", new_depth);
+                    tune_notify_start_ms = SDL_GetTicks();
+                }
+                if (tune_notify_start_ms != 0)
+                {
+                    const uint32_t notify_duration_ms = 3000;
+                    const uint32_t notify_fade_ms = 500;
+                    uint32_t elapsed = (uint32_t)(SDL_GetTicks() - tune_notify_start_ms);
+                    if (elapsed < notify_duration_ms)
+                    {
+                        float op = 1.0f;
+                        if (elapsed > notify_duration_ms - notify_fade_ms)
+                            op = (float)(notify_duration_ms - elapsed) / (float)notify_fade_ms;
+                        ui_render_notification(g_renderer, tune_notify_text, op);
+                    }
+                    else
+                    {
+                        tune_notify_start_ms = 0;
+                    }
+                }
 
                 // Show a brief startup hint for 6 seconds (with 1s fade-out)
                 // so users know they can press UP for the stats overlay.

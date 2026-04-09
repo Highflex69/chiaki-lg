@@ -19,6 +19,7 @@ typedef struct
     int auto_tune_max;       // auto-tuner upper bound for buf depth
     int chord_window_ms;     // Select+Start chord detection window
     int loop_interval_ns;    // main loop pacer interval (nanoseconds)
+    int audio_buf_depth;     // audio jitter buffer depth in packets (0 = passthrough)
 } PerfProfile;
 
 PerfProfile perf_profile_from_name(const char *name);

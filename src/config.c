@@ -18,6 +18,7 @@ PerfProfile perf_profile_from_name(const char *name)
             .auto_tune_max = 2,
             .chord_window_ms = 60,
             .loop_interval_ns = 2000000, /* 2 ms → 500 Hz */
+            .audio_buf_depth = 0,        /* passthrough — no added latency */
         };
 
     if (name && strcmp(name, "safe") == 0)
@@ -30,6 +31,7 @@ PerfProfile perf_profile_from_name(const char *name)
             .auto_tune_max = 6,
             .chord_window_ms = 150,
             .loop_interval_ns = 4000000, /* 4 ms → 250 Hz */
+            .audio_buf_depth = 4,        /* 40 ms hold buffer */
         };
 
     /* default: balanced */
@@ -42,6 +44,7 @@ PerfProfile perf_profile_from_name(const char *name)
         .auto_tune_max = 4,
         .chord_window_ms = 100,
         .loop_interval_ns = 4000000, /* 4 ms → 250 Hz */
+        .audio_buf_depth = 2,        /* 20 ms hold buffer */
     };
 }
 

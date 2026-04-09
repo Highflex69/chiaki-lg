@@ -28,6 +28,10 @@ void stats_reset(StreamStatsCounters *c)
     atomic_store_explicit(&c->jitter_max_us, 0, memory_order_relaxed);
     atomic_store_explicit(&c->frames_dropped, 0, memory_order_relaxed);
     atomic_store_explicit(&c->ndl_buf_depth, 0, memory_order_relaxed);
+
+    atomic_store_explicit(&c->audio_jitter_avg_us, 0, memory_order_relaxed);
+    atomic_store_explicit(&c->auto_tune_depth, 0, memory_order_relaxed);
+    atomic_store_explicit(&c->auto_tune_changed, 0, memory_order_relaxed);
 }
 
 void stats_set_video_format(StreamStatsCounters *c, int w, int h, int fps, int codec)
@@ -107,6 +111,7 @@ void stats_overlay_update(StatsOverlay *o, const StreamStatsCounters *c, uint32_
     int64_t jitter_max = atomic_load_explicit(&c->jitter_max_us, memory_order_relaxed);
     uint64_t dropped = atomic_load_explicit(&c->frames_dropped, memory_order_relaxed);
     int buf_depth = atomic_load_explicit(&c->ndl_buf_depth, memory_order_relaxed);
+    int64_t audio_jitter = atomic_load_explicit(&c->audio_jitter_avg_us, memory_order_relaxed);
 
     float dt = 0.0f;
     if (o->last_sample_ms != 0)
@@ -128,6 +133,7 @@ void stats_overlay_update(StatsOverlay *o, const StreamStatsCounters *c, uint32_
     o->jitter_ms = (float)jitter_avg / 1000.0f;
     o->jitter_max_ms = (float)jitter_max / 1000.0f;
     o->frames_dropped = dropped;
+    o->audio_jitter_ms = (float)audio_jitter / 1000.0f;
 
     // Estimated pipeline buffer latency (video render queue). This is only a proxy for
     // "how much video is buffered", not a full end-to-end network latency.
@@ -159,19 +165,20 @@ void stats_overlay_update(StatsOverlay *o, const StreamStatsCounters *c, uint32_
         snprintf(latency_line, sizeof(latency_line), "Latency: n/a\n");
 
     snprintf(o->text, sizeof(o->text),
-             "Stream Stats (UP to toggle)\n"
+             "Stream Stats [%s] (UP to toggle)\n"
              "Video: %dx%d  %s\n"
              "Bitrate: %.2f Mbps  (V %.2f / A %.2f)\n"
              "FPS: %.1f\n"
              "%s"
-             "Jitter: %.1f ms avg / %.1f ms max\n"
+             "Jitter: V %.1f ms avg / %.1f ms max  A %.1f ms\n"
              "NDL buf: %d frames  Dropped: %llu\n"
              "Feed errors: %llu\n",
+             o->perf_mode_name ? o->perf_mode_name : "balanced",
              vw, vh, codec_to_str(vcodec),
              o->mbps_total, o->mbps_video, o->mbps_audio,
              o->fps,
              latency_line,
-             o->jitter_ms, o->jitter_max_ms,
+             o->jitter_ms, o->jitter_max_ms, o->audio_jitter_ms,
              buf_depth, (unsigned long long)o->frames_dropped,
              (unsigned long long)o->feed_fail_total);
 }

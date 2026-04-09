@@ -59,12 +59,15 @@ struct VideoContext
     bool have_last_ts;
     int64_t expected_interval_us; /* 1/fps in microseconds */
     double jitter_ema_us;         /* exponential moving average of |deviation| */
+    double jitter_ema_alpha;      /* EMA smoothing factor (from perf profile) */
     int64_t jitter_window_max_us; /* max jitter in current sample window */
 
     /* ── Frame buffer limiter ──────────────────────────────────────────────── */
     int max_buf_depth; /* current limit (may be adjusted by auto-tuner) */
 
     /* ── Auto-tuner ────────────────────────────────────────────────────────── */
+    int auto_tune_min;           /* lower bound for buf depth */
+    int auto_tune_max;           /* upper bound for buf depth */
     uint64_t tune_frame_counter; /* frames since last auto-tune */
     double tune_avg_jitter_us;   /* average jitter during tune interval */
 };
@@ -229,6 +232,8 @@ bool video_sample_cb(uint8_t *buf, unsigned int buf_size, int codec, bool is_key
 
     if (ctx->tune_frame_counter >= AUTO_TUNE_INTERVAL)
     {
+        int old_depth = ctx->max_buf_depth;
+
         /* Adapt max_buf_depth based on observed jitter.
          * High jitter (>3ms) → allow slightly deeper buffer to absorb variance.
          * Low jitter (<1ms) → tighten to minimum for lowest latency. */
@@ -236,6 +241,14 @@ bool video_sample_cb(uint8_t *buf, unsigned int buf_size, int codec, bool is_key
             ctx->max_buf_depth++;
         else if (ctx->tune_avg_jitter_us < 1000.0 && ctx->max_buf_depth > ctx->auto_tune_min)
             ctx->max_buf_depth--;
+
+        /* Notify UI if depth changed */
+        if (ctx->max_buf_depth != old_depth)
+        {
+            atomic_store_explicit(&g_stream_stats.auto_tune_depth,
+                                  ctx->max_buf_depth, memory_order_relaxed);
+            atomic_store_explicit(&g_stream_stats.auto_tune_changed, 1, memory_order_release);
+        }
 
         if (ctx->frame_count > 0 && ctx->frame_count % (AUTO_TUNE_INTERVAL * 10) == 0)
             app_log_always("[VIDEO/TUNE] jitter_avg=%.0fus max_buf=%d\n",

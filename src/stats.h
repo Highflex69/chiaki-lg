@@ -33,6 +33,13 @@ typedef struct StreamStatsCounters
 
     // ── Frame pacing (updated from video callback thread) ────────────────────
     atomic_int ndl_buf_depth; // current NDL render buffer depth (frames)
+
+    // ── Audio jitter (updated from audio callback thread) ─────────────────────
+    atomic_int_fast64_t audio_jitter_avg_us; // EMA of inter-packet timing deviation
+
+    // ── Auto-tuner notifications ──────────────────────────────────────────────
+    atomic_int auto_tune_depth;   // current auto-tuned buf depth
+    atomic_int auto_tune_changed; // flag: set to 1 when depth changes
 } StreamStatsCounters;
 
 extern StreamStatsCounters g_stream_stats;
@@ -65,7 +72,13 @@ typedef struct StatsOverlay
     float jitter_max_ms;
     uint64_t frames_dropped;
 
-    char text[768];
+    // audio jitter
+    float audio_jitter_ms;
+
+    // perf mode
+    const char *perf_mode_name;
+
+    char text[1024];
 } StatsOverlay;
 
 void stats_overlay_init(StatsOverlay *o);
