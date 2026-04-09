@@ -23,6 +23,16 @@ typedef struct StreamStatsCounters
     // Optional latency reported by SS4S video backend (ms). Updated from the main thread.
     // -1 means unknown/unavailable.
     atomic_int video_latency_ms;
+
+    // ── Jitter estimator (updated from video callback thread) ────────────────
+    // Inter-frame arrival time tracking for network quality assessment.
+    // All times in microseconds.
+    atomic_int_fast64_t jitter_avg_us;   // exponential moving average of |delta - expected|
+    atomic_int_fast64_t jitter_max_us;   // max jitter seen in current sample window
+    atomic_uint_fast64_t frames_dropped; // frames dropped due to buffer limit
+
+    // ── Frame pacing (updated from video callback thread) ────────────────────
+    atomic_int ndl_buf_depth; // current NDL render buffer depth (frames)
 } StreamStatsCounters;
 
 extern StreamStatsCounters g_stream_stats;
@@ -46,11 +56,16 @@ typedef struct StatsOverlay
     float mbps_video;
     float mbps_audio;
     float fps;
-    int   video_buf_frames;
-    int   latency_ms;       // estimated pipeline buffer latency (video render queue)
+    int video_buf_frames;
+    int latency_ms; // estimated pipeline buffer latency (video render queue)
     uint64_t feed_fail_total;
 
-    char text[512];
+    // jitter
+    float jitter_ms;
+    float jitter_max_ms;
+    uint64_t frames_dropped;
+
+    char text[768];
 } StatsOverlay;
 
 void stats_overlay_init(StatsOverlay *o);

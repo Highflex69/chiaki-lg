@@ -40,30 +40,30 @@
 #include "stats.h"
 #include "config_import.h"
 
-#define APP_DIR     "/media/developer/apps/usr/palm/applications/org.homebrew.chiaki"
+#define APP_DIR "/media/developer/apps/usr/palm/applications/org.homebrew.chiaki"
 #define CONFIG_PATH APP_DIR "/config.json"
-#define LOG_PATH    "/tmp/chiaki.log"
+#define LOG_PATH "/tmp/chiaki.log"
 
 // ── Global state ──────────────────────────────────────────────────────────────
 
 // g_should_exit: set by SDL_QUIT (Home button) or SIGTERM — fully exit, no reconnect
 // g_session_ended: set by CHIAKI_EVENT_QUIT — session finished, check reason for reconnect
-static volatile bool g_should_exit   = false;
+static volatile bool g_should_exit = false;
 static volatile bool g_session_ended = false;
 static volatile ChiakiQuitReason g_quit_reason = CHIAKI_QUIT_REASON_NONE;
-static volatile bool g_ps5_sleeping  = false;  // PS5 initiated Rest Mode
+static volatile bool g_ps5_sleeping = false; // PS5 initiated Rest Mode
 
-static ChiakiSession  g_session;
-static SDL_Window    *g_window   = NULL;
-static SDL_Renderer  *g_renderer = NULL;
+static ChiakiSession g_session;
+static SDL_Window *g_window = NULL;
+static SDL_Renderer *g_renderer = NULL;
 
 // Set to true once we receive the first video sample.
 // (Written from Chiaki's video callback thread; read from the SDL loop.)
 volatile bool g_have_video_frame = false;
 
 // Global log file — accessible via app_log() from audio.c / video.c
-FILE *g_log_file   = NULL;
-int   g_log_level  = 0x1c;  // default: INFO|WARNING|ERROR until config loads
+FILE *g_log_file = NULL;
+int g_log_level = 0x1c; // default: INFO|WARNING|ERROR until config loads
 
 // ── Shared log helpers ────────────────────────────────────────────────────────
 
@@ -76,7 +76,8 @@ void app_log_always(const char *fmt, ...)
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-    if (g_log_file) {
+    if (g_log_file)
+    {
         va_start(ap, fmt);
         vfprintf(g_log_file, fmt, ap);
         va_end(ap);
@@ -87,12 +88,14 @@ void app_log_always(const char *fmt, ...)
 // app_log: INFO-gated — for high-volume operational chatter.
 void app_log(const char *fmt, ...)
 {
-    if (!(g_log_level & 0x04)) return;  // INFO bit not set — suppress
+    if (!(g_log_level & 0x04))
+        return; // INFO bit not set — suppress
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-    if (g_log_file) {
+    if (g_log_file)
+    {
         va_start(ap, fmt);
         vfprintf(g_log_file, fmt, ap);
         va_end(ap);
@@ -105,13 +108,20 @@ void app_log(const char *fmt, ...)
 // ChiakiLogLevel is a BITMASK: DEBUG=1, VERBOSE=2, INFO=4, WARNING=8, ERROR=16.
 static const char *chiaki_level_str(ChiakiLogLevel level)
 {
-    switch (level) {
-    case CHIAKI_LOG_DEBUG:   return "DEBUG";
-    case CHIAKI_LOG_VERBOSE: return "VERBOSE";
-    case CHIAKI_LOG_INFO:    return "INFO";
-    case CHIAKI_LOG_WARNING: return "WARNING";
-    case CHIAKI_LOG_ERROR:   return "ERROR";
-    default:                 return "LOG";
+    switch (level)
+    {
+    case CHIAKI_LOG_DEBUG:
+        return "DEBUG";
+    case CHIAKI_LOG_VERBOSE:
+        return "VERBOSE";
+    case CHIAKI_LOG_INFO:
+        return "INFO";
+    case CHIAKI_LOG_WARNING:
+        return "WARNING";
+    case CHIAKI_LOG_ERROR:
+        return "ERROR";
+    default:
+        return "LOG";
     }
 }
 
@@ -119,7 +129,8 @@ static void log_cb(ChiakiLogLevel level, const char *msg, void *user)
 {
     const char *lvl = chiaki_level_str(level);
     fprintf(stderr, "[CHIAKI][%s] %s\n", lvl, msg);
-    if (g_log_file) {
+    if (g_log_file)
+    {
         fprintf(g_log_file, "[CHIAKI][%s] %s\n", lvl, msg);
         fflush(g_log_file);
     }
@@ -137,17 +148,17 @@ static void session_event_cb(ChiakiEvent *event, void *user)
     case CHIAKI_EVENT_LOGIN_PIN_REQUEST:
         app_log("[APP] PIN requested — register first using chiaki-ng on PC\n");
         chiaki_session_set_login_pin(&g_session,
-            (const uint8_t *)"0000", 4);
+                                     (const uint8_t *)"0000", 4);
         break;
     case CHIAKI_EVENT_RUMBLE:
         break;
     case CHIAKI_EVENT_QUIT:
         // Log the reason so we can diagnose what triggered the disconnect.
         app_log_always("[APP] Session quit: reason=%d (%s) reason_str=%s\n",
-                event->quit.reason,
-                chiaki_quit_reason_string(event->quit.reason),
-                event->quit.reason_str ? event->quit.reason_str : "(none)");
-        g_quit_reason  = event->quit.reason;
+                       event->quit.reason,
+                       chiaki_quit_reason_string(event->quit.reason),
+                       event->quit.reason_str ? event->quit.reason_str : "(none)");
+        g_quit_reason = event->quit.reason;
         g_session_ended = true;
         // Detect PS5 Rest Mode via reason_str (no dedicated enum in this chiaki-ng version).
         // When the PS5 enters Rest Mode mid-stream it sends "Server shutting down".
@@ -160,7 +171,7 @@ static void session_event_cb(ChiakiEvent *event, void *user)
             app_log("[APP] PS5 entered Rest Mode (%s) -- exiting\n",
                     event->quit.reason_str);
             g_ps5_sleeping = true;
-            g_should_exit  = true;
+            g_should_exit = true;
         }
         break;
     default:
@@ -174,7 +185,7 @@ static void session_event_cb(ChiakiEvent *event, void *user)
 static void sig_handler(int sig)
 {
     app_log_always("[APP] Signal %d received — exiting\n", sig);
-    g_should_exit   = true;
+    g_should_exit = true;
     g_session_ended = true;
 }
 
@@ -216,7 +227,6 @@ static void do_wakeup(AppConfig *cfg, ChiakiLog *log)
     }
 }
 
-
 // ── SSL / CA certificate setup ───────────────────────────────────────────────
 static void setup_ssl_ca_bundle(void)
 {
@@ -226,17 +236,19 @@ static void setup_ssl_ca_bundle(void)
         "/etc/ssl/cert.pem",
         "/usr/share/ca-certificates/ca-certificates.crt",
         "/media/developer/apps/usr/palm/applications/org.homebrew.chiaki/cacert.pem",
-        NULL
-    };
+        NULL};
     const char *existing = getenv("CURL_CA_BUNDLE");
-    if (existing && existing[0] && access(existing, R_OK) == 0) {
+    if (existing && existing[0] && access(existing, R_OK) == 0)
+    {
         app_log_always("[SSL] Using CURL_CA_BUNDLE=%s (preset)\n", existing);
         return;
     }
-    for (int i = 0; ca_paths[i]; i++) {
-        if (access(ca_paths[i], R_OK) == 0) {
+    for (int i = 0; ca_paths[i]; i++)
+    {
+        if (access(ca_paths[i], R_OK) == 0)
+        {
             setenv("CURL_CA_BUNDLE", ca_paths[i], 1);
-            setenv("SSL_CERT_FILE",  ca_paths[i], 1);
+            setenv("SSL_CERT_FILE", ca_paths[i], 1);
             app_log_always("[SSL] Found CA bundle: %s\n", ca_paths[i]);
             return;
         }
@@ -251,17 +263,17 @@ static void setup_ssl_ca_bundle(void)
 // calls ourselves using curl handles we control.
 //
 // PSN OAuth credentials — public, baked into all chiaki-ng releases.
-#define PSN_CLIENT_ID     "ba495a24-818c-472b-b12d-ff231c1b5745"
+#define PSN_CLIENT_ID "ba495a24-818c-472b-b12d-ff231c1b5745"
 #define PSN_CLIENT_SECRET "mvaiZkRsAsI1IBkY"
-#define PSN_TOKEN_URL     "https://ca.account.sony.com/api/authz/v3/oauth/token"
-#define PSN_SCOPE \
-    "psn:clientapp " \
-    "referenceDataService:countryConfig.read " \
+#define PSN_TOKEN_URL "https://ca.account.sony.com/api/authz/v3/oauth/token"
+#define PSN_SCOPE                                 \
+    "psn:clientapp "                              \
+    "referenceDataService:countryConfig.read "    \
     "pushNotification:webSocket.desktop.connect " \
     "sessionManager:remotePlaySession.system.update"
 
 // PSN API endpoints
-#define PSN_DEVICES_URL \
+#define PSN_DEVICES_URL                                                              \
     "https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/clients" \
     "?platform=PS5&includeFields=device&limit=10&offset=0"
 #define PSN_SESSION_URL \
@@ -269,8 +281,11 @@ static void setup_ssl_ca_bundle(void)
 #define PSN_COMMAND_URL \
     "https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/commands"
 
-
-typedef struct { char *buf; size_t len; } CurlBuf;
+typedef struct
+{
+    char *buf;
+    size_t len;
+} CurlBuf;
 
 // Generate a 16-byte random nonce and base64-encode it into out (NUL-terminated).
 // Output length will be 24 chars + NUL.
@@ -291,7 +306,8 @@ static size_t curl_write_cb(void *ptr, size_t size, size_t nmemb, void *userdata
     CurlBuf *b = (CurlBuf *)userdata;
     size_t total = size * nmemb;
     char *tmp = realloc(b->buf, b->len + total + 1);
-    if (!tmp) return 0;
+    if (!tmp)
+        return 0;
     b->buf = tmp;
     memcpy(b->buf + b->len, ptr, total);
     b->len += total;
@@ -303,8 +319,8 @@ static size_t curl_write_cb(void *ptr, size_t size, size_t nmemb, void *userdata
 static void psn_curl_common(CURL *curl, CurlBuf *resp)
 {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA,     resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT,       15L);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, resp);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 }
@@ -313,10 +329,15 @@ static void psn_curl_common(CURL *curl, CurlBuf *resp)
 static char *psn_refresh_access_token(const char *refresh_token)
 {
     CURL *curl = curl_easy_init();
-    if (!curl) { app_log_always("[PSN] curl_easy_init failed\n"); return NULL; }
+    if (!curl)
+    {
+        app_log_always("[PSN] curl_easy_init failed\n");
+        return NULL;
+    }
 
     const char *token = refresh_token;
-    if (strncmp(token, "v3.", 3) == 0) {
+    if (strncmp(token, "v3.", 3) == 0)
+    {
         token += 3;
         app_log_always("[PSN] Stripped 'v3.' prefix from refresh token\n");
     }
@@ -326,18 +347,18 @@ static char *psn_refresh_access_token(const char *refresh_token)
     char *enc_scope = curl_easy_escape(curl, PSN_SCOPE, 0);
     char body[4096];
     snprintf(body, sizeof(body),
-        "grant_type=refresh_token&refresh_token=%s&scope=%s", enc_token, enc_scope);
+             "grant_type=refresh_token&refresh_token=%s&scope=%s", enc_token, enc_scope);
     curl_free(enc_token);
     curl_free(enc_scope);
 
     CurlBuf resp = {0};
     struct curl_slist *hdrs = curl_slist_append(NULL,
-        "Content-Type: application/x-www-form-urlencoded");
-    curl_easy_setopt(curl, CURLOPT_URL,       PSN_TOKEN_URL);
-    curl_easy_setopt(curl, CURLOPT_POST,      1L);
+                                                "Content-Type: application/x-www-form-urlencoded");
+    curl_easy_setopt(curl, CURLOPT_URL, PSN_TOKEN_URL);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
-    curl_easy_setopt(curl, CURLOPT_USERNAME,  PSN_CLIENT_ID);
-    curl_easy_setopt(curl, CURLOPT_PASSWORD,  PSN_CLIENT_SECRET);
+    curl_easy_setopt(curl, CURLOPT_USERNAME, PSN_CLIENT_ID);
+    curl_easy_setopt(curl, CURLOPT_PASSWORD, PSN_CLIENT_SECRET);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
     psn_curl_common(curl, &resp);
 
@@ -347,22 +368,26 @@ static char *psn_refresh_access_token(const char *refresh_token)
     curl_slist_free_all(hdrs);
     curl_easy_cleanup(curl);
 
-    if (rc != CURLE_OK) {
+    if (rc != CURLE_OK)
+    {
         app_log_always("[PSN] Token refresh curl error: %s\n", curl_easy_strerror(rc));
         free(resp.buf);
         return NULL;
     }
     app_log_always("[PSN] Token endpoint HTTP %ld (%zu bytes)\n", http_code, resp.len);
-    if (http_code != 200) {
+    if (http_code != 200)
+    {
         app_log_always("[PSN] Token refresh failed: %.512s\n", resp.buf ? resp.buf : "");
         free(resp.buf);
         return NULL;
     }
 
     char *access_token = NULL;
-    if (resp.buf) {
+    if (resp.buf)
+    {
         struct json_object *root = json_tokener_parse(resp.buf);
-        if (root) {
+        if (root)
+        {
             struct json_object *tok;
             if (json_object_object_get_ex(root, "access_token", &tok))
                 access_token = strdup(json_object_get_string(tok));
@@ -382,7 +407,8 @@ static char *psn_refresh_access_token(const char *refresh_token)
 static char *psn_list_devices(const char *access_token)
 {
     CURL *curl = curl_easy_init();
-    if (!curl) return NULL;
+    if (!curl)
+        return NULL;
 
     char auth_hdr[512];
     snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", access_token);
@@ -400,15 +426,17 @@ static char *psn_list_devices(const char *access_token)
     curl_slist_free_all(hdrs);
     curl_easy_cleanup(curl);
 
-    if (rc != CURLE_OK) {
+    if (rc != CURLE_OK)
+    {
         app_log_always("[PSN] list_devices curl error: %s\n", curl_easy_strerror(rc));
         free(resp.buf);
         return NULL;
     }
     app_log_always("[PSN] list_devices HTTP %ld (%zu bytes): %.1024s\n",
-            http_code, resp.len, resp.buf ? resp.buf : "");
+                   http_code, resp.len, resp.buf ? resp.buf : "");
 
-    if (http_code != 200 || !resp.buf) {
+    if (http_code != 200 || !resp.buf)
+    {
         free(resp.buf);
         return NULL;
     }
@@ -417,31 +445,38 @@ static char *psn_list_devices(const char *access_token)
     // {"clients":[{"device":{"name":"PS5-616","enabledFeatures":["remotePlay"],...},"duid":"...","platform":"PS5"}]}
     char *duid = NULL;
     struct json_object *root = json_tokener_parse(resp.buf);
-    if (root) {
+    if (root)
+    {
         struct json_object *clients;
-        if (json_object_object_get_ex(root, "clients", &clients)) {
+        if (json_object_object_get_ex(root, "clients", &clients))
+        {
             int n = json_object_array_length(clients);
             app_log_always("[PSN] Found %d device(s)\n", n);
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < n; i++)
+            {
                 struct json_object *client = json_object_array_get_idx(clients, i);
                 struct json_object *device_obj, *duid_obj;
 
                 // Name is nested: client.device.name
                 const char *dname = "?";
                 bool rp_enabled = false;
-                if (json_object_object_get_ex(client, "device", &device_obj)) {
+                if (json_object_object_get_ex(client, "device", &device_obj))
+                {
                     struct json_object *name_obj;
                     if (json_object_object_get_ex(device_obj, "name", &name_obj))
                         dname = json_object_get_string(name_obj);
 
                     // Check enabledFeatures array for "remotePlay"
                     struct json_object *features;
-                    if (json_object_object_get_ex(device_obj, "enabledFeatures", &features)) {
+                    if (json_object_object_get_ex(device_obj, "enabledFeatures", &features))
+                    {
                         int nf = json_object_array_length(features);
-                        for (int j = 0; j < nf; j++) {
+                        for (int j = 0; j < nf; j++)
+                        {
                             const char *feat = json_object_get_string(
                                 json_object_array_get_idx(features, j));
-                            if (feat && strcmp(feat, "remotePlay") == 0) {
+                            if (feat && strcmp(feat, "remotePlay") == 0)
+                            {
                                 rp_enabled = true;
                                 break;
                             }
@@ -451,14 +486,18 @@ static char *psn_list_devices(const char *access_token)
 
                 app_log_always("[PSN]   [%d] name=%s  remotePlay=%d\n", i, dname, rp_enabled);
 
-                if (rp_enabled && !duid) {
+                if (rp_enabled && !duid)
+                {
                     if (json_object_object_get_ex(client, "duid", &duid_obj))
                         duid = strdup(json_object_get_string(duid_obj));
                 }
             }
-        } else {
+        }
+        else
+        {
             app_log_always("[PSN] No 'clients' key — top-level keys:");
-            json_object_object_foreach(root, key, val) {
+            json_object_object_foreach(root, key, val)
+            {
                 (void)val;
                 app_log_always(" %s", key);
             }
@@ -486,25 +525,31 @@ static bool psn_decode_account_id(const char *b64, char *out, size_t out_sz)
     uint8_t buf[8];
     size_t b64_len = strlen(b64);
     size_t pad = 0;
-    if (b64_len > 0 && b64[b64_len-1] == '=') pad++;
-    if (b64_len > 1 && b64[b64_len-2] == '=') pad++;
+    if (b64_len > 0 && b64[b64_len - 1] == '=')
+        pad++;
+    if (b64_len > 1 && b64[b64_len - 2] == '=')
+        pad++;
 
     size_t out_len = 0;
     uint32_t accum = 0;
     int bits = 0;
-    for (size_t i = 0; i < b64_len && b64[i] != '='; i++) {
+    for (size_t i = 0; i < b64_len && b64[i] != '='; i++)
+    {
         const char *p = strchr(t, b64[i]);
-        if (!p) continue;
+        if (!p)
+            continue;
         accum = (accum << 6) | (uint32_t)(p - t);
         bits += 6;
-        if (bits >= 8) {
+        if (bits >= 8)
+        {
             bits -= 8;
             if (out_len < sizeof(buf))
                 buf[out_len++] = (uint8_t)(accum >> bits);
             accum &= (1u << bits) - 1;
         }
     }
-    if (out_len != 8) {
+    if (out_len != 8)
+    {
         app_log_always("[PSN] account_id base64 decode: expected 8 bytes, got %zu\n", out_len);
         return false;
     }
@@ -530,12 +575,12 @@ static void psn_make_client_duid(char *out, size_t out_sz)
         hash[i % 16] ^= (uint8_t)seed[i];
     // Standard prefix (0000000700410080) + 32 hex chars from hash
     snprintf(out, out_sz,
-        "0000000700410080"
-        "%02x%02x%02x%02x%02x%02x%02x%02x"
-        "%02x%02x%02x%02x%02x%02x%02x%02x",
-        hash[0], hash[1], hash[2], hash[3], hash[4], hash[5],
-        hash[6], hash[7], hash[8], hash[9], hash[10], hash[11],
-        hash[12], hash[13], hash[14], hash[15]);
+             "0000000700410080"
+             "%02x%02x%02x%02x%02x%02x%02x%02x"
+             "%02x%02x%02x%02x%02x%02x%02x%02x",
+             hash[0], hash[1], hash[2], hash[3], hash[4], hash[5],
+             hash[6], hash[7], hash[8], hash[9], hash[10], hash[11],
+             hash[12], hash[13], hash[14], hash[15]);
 }
 
 // ── Step 1: Create a Remote Play session on PSN ──────────────────────────────
@@ -545,7 +590,8 @@ static char *psn_create_session(const char *access_token, const char *account_id
                                 const char *client_duid, char **out_member_device_uid)
 {
     CURL *curl = curl_easy_init();
-    if (!curl) return NULL;
+    if (!curl)
+        return NULL;
 
     if (out_member_device_uid)
         *out_member_device_uid = NULL;
@@ -563,21 +609,21 @@ static char *psn_create_session(const char *access_token, const char *account_id
     // The session creation itself triggers PSN to send an SQS wakeup to the PS5.
     char push_uuid[64];
     snprintf(push_uuid, sizeof(push_uuid),
-        "%08x-%04x-%04x-%04x-%08x%04x",
-        (unsigned)time(NULL), (unsigned)(rand() & 0xFFFF),
-        0x4000 | (rand() & 0x0FFF),
-        0x8000 | (rand() & 0x3FFF),
-        (unsigned)rand(), (unsigned)(rand() & 0xFFFF));
+             "%08x-%04x-%04x-%04x-%08x%04x",
+             (unsigned)time(NULL), (unsigned)(rand() & 0xFFFF),
+             0x4000 | (rand() & 0x0FFF),
+             0x8000 | (rand() & 0x3FFF),
+             (unsigned)rand(), (unsigned)(rand() & 0xFFFF));
 
     char body[2048];
     snprintf(body, sizeof(body),
-        "{\"remotePlaySessions\":[{\"members\":[{"
-            "\"accountId\":\"me\","
-            "\"deviceUniqueId\":\"me\","
-            "\"platform\":\"me\","
-            "\"pushContexts\":[{\"pushContextId\":\"%s\"}]"
-        "}]}]}",
-        push_uuid);
+             "{\"remotePlaySessions\":[{\"members\":[{"
+             "\"accountId\":\"me\","
+             "\"deviceUniqueId\":\"me\","
+             "\"platform\":\"me\","
+             "\"pushContexts\":[{\"pushContextId\":\"%s\"}]"
+             "}]}]}",
+             push_uuid);
 
     app_log_always("[PSN] Session create body: %s\n", body);
 
@@ -594,15 +640,17 @@ static char *psn_create_session(const char *access_token, const char *account_id
     curl_slist_free_all(hdrs);
     curl_easy_cleanup(curl);
 
-    if (rc != CURLE_OK) {
+    if (rc != CURLE_OK)
+    {
         app_log_always("[PSN] Session create curl error: %s\n", curl_easy_strerror(rc));
         free(resp.buf);
         return NULL;
     }
     app_log_always("[PSN] Session create HTTP %ld (%zu bytes): %.1024s\n",
-            http_code, resp.len, resp.buf ? resp.buf : "");
+                   http_code, resp.len, resp.buf ? resp.buf : "");
 
-    if (http_code < 200 || http_code >= 300 || !resp.buf) {
+    if (http_code < 200 || http_code >= 300 || !resp.buf)
+    {
         free(resp.buf);
         return NULL;
     }
@@ -611,7 +659,8 @@ static char *psn_create_session(const char *access_token, const char *account_id
     // {"remotePlaySessions":[{"sessionId":"...", ...}]}
     char *session_id = NULL;
     struct json_object *root = json_tokener_parse(resp.buf);
-    if (root) {
+    if (root)
+    {
         struct json_object *sessions;
         if (json_object_object_get_ex(root, "remotePlaySessions", &sessions) &&
             json_object_array_length(sessions) > 0)
@@ -620,7 +669,8 @@ static char *psn_create_session(const char *access_token, const char *account_id
             struct json_object *sid;
             if (json_object_object_get_ex(first, "sessionId", &sid))
                 session_id = strdup(json_object_get_string(sid));
-            if (out_member_device_uid) {
+            if (out_member_device_uid)
+            {
                 struct json_object *members;
                 if (json_object_object_get_ex(first, "members", &members) &&
                     json_object_array_length(members) > 0)
@@ -638,8 +688,8 @@ static char *psn_create_session(const char *access_token, const char *account_id
 
     if (session_id)
         app_log_always("[PSN] Session created: %s\n", session_id);
-        if (out_member_device_uid && *out_member_device_uid)
-            app_log_always("[PSN] Session member deviceUniqueId: %s\n", *out_member_device_uid);
+    if (out_member_device_uid && *out_member_device_uid)
+        app_log_always("[PSN] Session member deviceUniqueId: %s\n", *out_member_device_uid);
     else
         app_log_always("[PSN] Could not parse sessionId from response\n");
     return session_id;
@@ -688,29 +738,29 @@ static bool psn_start_session(const char *access_token,
 
     char initial_params[1024];
     snprintf(initial_params, sizeof(initial_params),
-            "{\\\"accountId\\\":%s,"
-            "\\\"roomId\\\":0,"
-            "\\\"sessionId\\\":\\\"%s\\\","
-            "\\\"clientType\\\":\\\"Windows\\\","
-            "\\\"data1\\\":\\\"%s\\\","
-            "\\\"data2\\\":\\\"%s\\\"}",
-            account_id, session_id, data1_b64, data2_b64);
+             "{\\\"accountId\\\":%s,"
+             "\\\"roomId\\\":0,"
+             "\\\"sessionId\\\":\\\"%s\\\","
+             "\\\"clientType\\\":\\\"Windows\\\","
+             "\\\"data1\\\":\\\"%s\\\","
+             "\\\"data2\\\":\\\"%s\\\"}",
+             account_id, session_id, data1_b64, data2_b64);
 
     // Command envelope (this is what yields HTTP 200 + {"commandId":...} in chiaki-ng logs)
     char body[2048];
     snprintf(body, sizeof(body),
-            "{"
-              "\"commandDetail\":{"
-                "\"commandType\":\"remotePlay\","
-                "\"duid\":\"%s\","
-                "\"messageDestination\":\"SQS\","
-                "\"parameters\":{"
-                  "\"initialParams\":\"%s\""
-                "},"
-                "\"platform\":\"PS5\""
-              "}"
-            "}",
-            duid, initial_params);
+             "{"
+             "\"commandDetail\":{"
+             "\"commandType\":\"remotePlay\","
+             "\"duid\":\"%s\","
+             "\"messageDestination\":\"SQS\","
+             "\"parameters\":{"
+             "\"initialParams\":\"%s\""
+             "},"
+             "\"platform\":\"PS5\""
+             "}"
+             "}",
+             duid, initial_params);
 
     app_log_always("[PSN] Session command body: %s\n", body);
 
@@ -741,12 +791,12 @@ static bool psn_start_session(const char *access_token,
     return (rc == CURLE_OK) && (http_code >= 200 && http_code < 300);
 }
 
-
 // ── Cleanup: delete session ──────────────────────────────────────────────────
 static void psn_delete_session(const char *access_token, const char *session_id)
 {
     CURL *curl = curl_easy_init();
-    if (!curl) return;
+    if (!curl)
+        return;
 
     char url[1024];
     snprintf(url, sizeof(url), "%s/%s/members/me", PSN_SESSION_URL, session_id);
@@ -790,7 +840,8 @@ static void do_psn_wakeup(AppConfig *cfg, ChiakiLog *log)
 
     // Step 1: Refresh access token
     char *access_token = psn_refresh_access_token(cfg->psn_refresh_token);
-    if (!access_token) {
+    if (!access_token)
+    {
         app_log_always("[PSN] No access_token — falling back to UDP wakeup\n");
         do_wakeup(cfg, log);
         return;
@@ -798,7 +849,8 @@ static void do_psn_wakeup(AppConfig *cfg, ChiakiLog *log)
 
     // Step 2: List devices to find PS5's duid
     char *duid = psn_list_devices(access_token);
-    if (!duid) {
+    if (!duid)
+    {
         app_log_always("[PSN] Could not find PS5 device — falling back to UDP wakeup\n");
         free(access_token);
         do_wakeup(cfg, log);
@@ -812,7 +864,8 @@ static void do_psn_wakeup(AppConfig *cfg, ChiakiLog *log)
 
     // Step 4: Create Remote Play session on PSN
     char *session_id = psn_create_session(access_token, account_id, client_duid, NULL);
-    if (!session_id) {
+    if (!session_id)
+    {
         app_log_always("[PSN] Session creation failed — falling back to UDP wakeup\n");
         free(duid);
         free(access_token);
@@ -829,9 +882,12 @@ static void do_psn_wakeup(AppConfig *cfg, ChiakiLog *log)
     free(duid);
     free(access_token);
 
-    if (ok) {
+    if (ok)
+    {
         app_log_always("[PSN] Cloud wakeup sent successfully — waiting for PS5\n");
-    } else {
+    }
+    else
+    {
         app_log_always("[PSN] Cloud wakeup command failed — falling back to UDP wakeup\n");
         do_wakeup(cfg, log);
     }
@@ -852,11 +908,12 @@ static const char *detect_webos_ss4s_module(void)
     static const char *nyx_paths[] = {
         "/var/run/nyx/os_info.json",
         "/etc/nyx/os_info.json",
-        NULL
-    };
-    for (int pi = 0; nyx_paths[pi]; pi++) {
+        NULL};
+    for (int pi = 0; nyx_paths[pi]; pi++)
+    {
         FILE *f = fopen(nyx_paths[pi], "r");
-        if (!f) continue;
+        if (!f)
+            continue;
         char buf[512];
         size_t n = fread(buf, 1, sizeof(buf) - 1, f);
         fclose(f);
@@ -864,27 +921,33 @@ static const char *detect_webos_ss4s_module(void)
 
         // Look for "core_os_release":"X..." or "webos_release":"X..."
         static const char *keys[] = {
-            "core_os_release", "webos_release", "release", NULL
-        };
-        for (int ki = 0; keys[ki]; ki++) {
+            "core_os_release", "webos_release", "release", NULL};
+        for (int ki = 0; keys[ki]; ki++)
+        {
             char *p = strstr(buf, keys[ki]);
-            if (!p) continue;
+            if (!p)
+                continue;
             p = strchr(p, ':');
-            if (!p) continue;
+            if (!p)
+                continue;
             // Skip : whitespace "
-            while (*p && (*p == ':' || *p == ' ' || *p == '"')) p++;
+            while (*p && (*p == ':' || *p == ' ' || *p == '"'))
+                p++;
             int major = atoi(p);
-            if (major >= 5) {
+            if (major >= 5)
+            {
                 app_log_always("[AUTO] webOS %d detected via %s — using ndl-webos5\n",
                                major, nyx_paths[pi]);
                 return "ndl-webos5";
             }
-            if (major == 4) {
+            if (major == 4)
+            {
                 app_log_always("[AUTO] webOS %d detected via %s — using ndl-webos4\n",
                                major, nyx_paths[pi]);
                 return "ndl-webos4";
             }
-            if (major > 0) {
+            if (major > 0)
+            {
                 // webOS 3 or unknown old version — ndl-webos4 is the safer bet
                 // (esplayer backend is not supported in this build)
                 app_log_always("[AUTO] webOS %d detected via %s — defaulting ndl-webos4\n",
@@ -901,10 +964,11 @@ static const char *detect_webos_ss4s_module(void)
         "/usr/lib/libndl-directmedia2.so",
         "/usr/lib/libndl-directmedia2.so.1",
         "/usr/local/lib/libndl-directmedia2.so",
-        NULL
-    };
-    for (int i = 0; ndl2_paths[i]; i++) {
-        if (access(ndl2_paths[i], F_OK) == 0) {
+        NULL};
+    for (int i = 0; ndl2_paths[i]; i++)
+    {
+        if (access(ndl2_paths[i], F_OK) == 0)
+        {
             app_log_always("[AUTO] Found %s — using ndl-webos5\n", ndl2_paths[i]);
             return "ndl-webos5";
         }
@@ -912,10 +976,11 @@ static const char *detect_webos_ss4s_module(void)
     static const char *ndl1_paths[] = {
         "/usr/lib/libndl-directmedia.so",
         "/usr/lib/libndl-directmedia.so.1",
-        NULL
-    };
-    for (int i = 0; ndl1_paths[i]; i++) {
-        if (access(ndl1_paths[i], F_OK) == 0) {
+        NULL};
+    for (int i = 0; ndl1_paths[i]; i++)
+    {
+        if (access(ndl1_paths[i], F_OK) == 0)
+        {
             app_log_always("[AUTO] Found %s (no v2) — using ndl-webos4\n", ndl1_paths[i]);
             return "ndl-webos4";
         }
@@ -931,11 +996,11 @@ static const char *detect_webos_ss4s_module(void)
 // We reconnect on transient network errors, not on deliberate user/PS5 quits.
 static bool should_reconnect(ChiakiQuitReason reason)
 {
-    switch (reason) {
+    switch (reason)
+    {
     // These are deliberate stops — don't reconnect.
     case CHIAKI_QUIT_REASON_STOPPED:
         return false;
-
 
     // PS5 kicked us because another client connected (or session was stolen).
     // Reconnecting immediately would loop forever; exit cleanly.
@@ -955,13 +1020,16 @@ int main(int argc, char *argv[])
 {
     // Disable core dumps — a crashing 1080p stream process can produce a
     // 400MB core file and quickly fill the TV's limited storage.
-    { struct rlimit rl = {0, 0}; setrlimit(RLIMIT_CORE, &rl); }
+    {
+        struct rlimit rl = {0, 0};
+        setrlimit(RLIMIT_CORE, &rl);
+    }
 
     /* ===== REQUIRED WEBOS SS4S ENV SETUP ===== */
     chdir("/media/developer/apps/usr/palm/applications/org.homebrew.chiaki");
     setenv("SS4S_CONFIG_FILE", "./lib/ss4s_modules.ini", 1);
     // SS4S_MODULE is set after config load — auto-detection picks ndl-webos4 or ndl-webos5.
-    setenv("SS4S_APP_ID",      "org.homebrew.chiaki",    1);
+    setenv("SS4S_APP_ID", "org.homebrew.chiaki", 1);
     /* ========================================= */
 
     // Open log unconditionally first — once cfg is loaded we'll close it
@@ -978,9 +1046,9 @@ int main(int argc, char *argv[])
         app_log("\n\n========== NEW LAUNCH %s ==========\n", tbuf);
     }
 
-    app_log("[APP] SS4S_MODULE=%s\n",      getenv("SS4S_MODULE"));
+    app_log("[APP] SS4S_MODULE=%s\n", getenv("SS4S_MODULE"));
     app_log("[APP] SS4S_CONFIG_FILE=%s\n", getenv("SS4S_CONFIG_FILE"));
-    app_log("[APP] SS4S_APP_ID=%s\n",      getenv("SS4S_APP_ID"));
+    app_log("[APP] SS4S_APP_ID=%s\n", getenv("SS4S_APP_ID"));
 
     const char *config_path = CONFIG_PATH;
     if (argc > 1 && argv[1][0] != '{' && argv[1][0] != '\0')
@@ -988,9 +1056,8 @@ int main(int argc, char *argv[])
 
     app_log("[APP] config_path = %s\n", config_path);
 
-    signal(SIGINT,  sig_handler);
+    signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
-
 
     // ── Load config ──────────────────────────────────────────────────────────
     AppConfig cfg;
@@ -1001,18 +1068,20 @@ int main(int argc, char *argv[])
     }
     // Honour log_level=0 (off): close the log file we opened early for startup errors.
     g_log_level = cfg.log_level;
-    if (!cfg.log_level && g_log_file) {
+    if (!cfg.log_level && g_log_file)
+    {
         fclose(g_log_file);
         g_log_file = NULL;
     }
 
     app_log_always("[APP] Connecting to %s  ps5=%d  %dx%d@%dfps\n",
-            cfg.host, cfg.ps5, cfg.video_width, cfg.video_height, cfg.video_fps);
+                   cfg.host, cfg.ps5, cfg.video_width, cfg.video_height, cfg.video_fps);
 
     // ── SS4S module auto-detection ───────────────────────────────────────────
     // If config says "auto" (the default), detect the webOS version now and
     // replace with the appropriate module name before anything touches SS4S.
-    if (cfg.ss4s_module && strcmp(cfg.ss4s_module, "auto") == 0) {
+    if (cfg.ss4s_module && strcmp(cfg.ss4s_module, "auto") == 0)
+    {
         free(cfg.ss4s_module);
         cfg.ss4s_module = strdup(detect_webos_ss4s_module());
     }
@@ -1048,9 +1117,9 @@ int main(int argc, char *argv[])
     // Do NOT call SDL_HideWindow — webOS kills hidden-window processes.
     // Do NOT use SDL_RENDERER_SOFTWARE — can't composite-transparent on webOS.
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE,   8);
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE,  8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
 
     g_window = SDL_CreateWindow(
         "Chiaki",
@@ -1114,7 +1183,6 @@ int main(int argc, char *argv[])
     StatsOverlay stats_overlay;
     stats_overlay_init(&stats_overlay);
 
-
     // ── Chiaki logging ───────────────────────────────────────────────────────
     // Pass the configured bitmask so chiaki-ng itself filters at the source.
     ChiakiLog chiaki_log;
@@ -1123,7 +1191,7 @@ int main(int argc, char *argv[])
     // ── Launcher UI (shown on every launch) ───────────────────────────────
 
     app_log("[APP] Showing launcher UI\n");
-    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);  // opaque for UI
+    SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255); // opaque for UI
     SDL_RenderClear(g_renderer);
     SDL_RenderPresent(g_renderer);
     SDL_SetWindowSize(g_window, cfg.video_width, cfg.video_height);
@@ -1175,7 +1243,8 @@ int main(int argc, char *argv[])
     {
         SDL_SysWMinfo wm_info;
         SDL_VERSION(&wm_info.version);
-        if (SDL_GetWindowWMInfo(g_window, &wm_info)) {
+        if (SDL_GetWindowWMInfo(g_window, &wm_info))
+        {
             app_log("[APP] SDL_GetWindowWMInfo OK — subsystem=%d\n",
                     (int)wm_info.subsystem);
             // On the webOS SDL2 build, the exported window ID is stored in
@@ -1186,7 +1255,9 @@ int main(int argc, char *argv[])
             for (int _i = 0; _i < 64 && _i < (int)sizeof(wm_info.info); _i++)
                 app_log("%02x ", raw[_i]);
             app_log("\n");
-        } else {
+        }
+        else
+        {
             app_log("[APP] SDL_GetWindowWMInfo FAILED: %s\n", SDL_GetError());
         }
     }
@@ -1194,15 +1265,15 @@ int main(int argc, char *argv[])
 
     // ── Video / Audio / Input init ────────────────────────────────────────────
     // Determine codec once - used by both video_init (SS4S) and info.video_profile.codec (Chiaki).
-    bool force_h264    = cfg.video_codec && strcmp(cfg.video_codec, "h264") == 0;
+    bool force_h264 = cfg.video_codec && strcmp(cfg.video_codec, "h264") == 0;
     bool want_h265_hdr = cfg.video_codec && strcmp(cfg.video_codec, "h265_hdr") == 0;
 
     int requested_codec = CHIAKI_CODEC_H264;
-    if(cfg.ps5)
+    if (cfg.ps5)
     {
-        if(force_h264)
+        if (force_h264)
             requested_codec = CHIAKI_CODEC_H264;
-        else if(want_h265_hdr)
+        else if (want_h265_hdr)
             requested_codec = CHIAKI_CODEC_H265_HDR;
         else
             requested_codec = CHIAKI_CODEC_H265;
@@ -1211,7 +1282,7 @@ int main(int argc, char *argv[])
     {
         // PS4 sessions do not support HEVC/HDR in Chiaki; force H.264.
         requested_codec = CHIAKI_CODEC_H264;
-        if(want_h265_hdr)
+        if (want_h265_hdr)
             app_log_always("[APP] video_codec=h265_hdr requested but ps5=false - forcing H.264\n");
     }
 
@@ -1243,7 +1314,7 @@ int main(int argc, char *argv[])
     ChiakiConnectInfo info;
     memset(&info, 0, sizeof(info));
     info.host = cfg.host;
-    info.ps5  = cfg.ps5;
+    info.ps5 = cfg.ps5;
 
     size_t decoded_len;
 
@@ -1274,8 +1345,8 @@ int main(int argc, char *argv[])
     }
     memcpy(&info.psn_account_id, account_id_raw, sizeof(info.psn_account_id));
 
-    info.video_profile.width   = cfg.video_width;
-    info.video_profile.height  = cfg.video_height;
+    info.video_profile.width = cfg.video_width;
+    info.video_profile.height = cfg.video_height;
     info.video_profile.max_fps = cfg.video_fps;
     info.video_profile.bitrate = cfg.video_bitrate;
 
@@ -1293,14 +1364,14 @@ int main(int argc, char *argv[])
 
         // Reset per-session flags before every attempt.
         g_session_ended = false;
-        g_quit_reason   = CHIAKI_QUIT_REASON_NONE;
-        g_ps5_sleeping  = false;
+        g_quit_reason = CHIAKI_QUIT_REASON_NONE;
+        g_ps5_sleeping = false;
         g_have_video_frame = false;
 
         // Reset per-session stats counters
         stats_reset(&g_stream_stats);
         stats_set_video_format(&g_stream_stats, cfg.video_width, cfg.video_height, cfg.video_fps,
-                             info.video_profile.codec);
+                               info.video_profile.codec);
 
         // Show a minimal loading screen immediately.
         ui_render_loading(g_renderer, "Connecting");
@@ -1318,24 +1389,29 @@ int main(int argc, char *argv[])
             else
                 do_wakeup(&cfg, &chiaki_log);
 
-            Uint32 deadline      = SDL_GetTicks() + (Uint32)cfg.wakeup_delay_ms;
-            Uint32 next_wakeup   = SDL_GetTicks() + 5000;
+            Uint32 deadline = SDL_GetTicks() + (Uint32)cfg.wakeup_delay_ms;
+            Uint32 next_wakeup = SDL_GetTicks() + 5000;
             app_log_always("[WAKEUP] Waiting up to %dms for PS5 to become ready...\n",
-                    cfg.wakeup_delay_ms);
+                           cfg.wakeup_delay_ms);
             bool ps5_ready = false;
             SDL_Event ev;
 
             struct sockaddr_in sa;
             memset(&sa, 0, sizeof(sa));
             sa.sin_family = AF_INET;
-            sa.sin_port   = htons(9295);
+            sa.sin_port = htons(9295);
             inet_pton(AF_INET, cfg.host, &sa.sin_addr);
 
             while (!g_should_exit && SDL_GetTicks() < deadline)
             {
                 while (SDL_PollEvent(&ev))
-                    if (ev.type == SDL_QUIT) { g_should_exit = true; break; }
-                if (g_should_exit) break;
+                    if (ev.type == SDL_QUIT)
+                    {
+                        g_should_exit = true;
+                        break;
+                    }
+                if (g_should_exit)
+                    break;
 
                 ui_render_loading(g_renderer, "Waking console");
                 SDL_RenderPresent(g_renderer);
@@ -1369,7 +1445,7 @@ int main(int argc, char *argv[])
                     fd_set wfds;
                     FD_ZERO(&wfds);
                     FD_SET(probe, &wfds);
-                    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+                    struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
                     int sel = select(probe + 1, NULL, &wfds, NULL, &tv);
                     if (sel > 0)
                     {
@@ -1385,7 +1461,8 @@ int main(int argc, char *argv[])
                         }
                         app_log("[WAKEUP] probe: %s (errno=%d)\n",
                                 err2 == ECONNREFUSED ? "ECONNREFUSED — PS5 NIC up, port 9295 closed"
-                                                     : strerror(err2), err2);
+                                                     : strerror(err2),
+                                err2);
                     }
                     else if (sel == 0)
                     {
@@ -1419,7 +1496,7 @@ int main(int argc, char *argv[])
 
         chiaki_session_set_event_cb(&g_session, session_event_cb, NULL);
         chiaki_session_set_video_sample_cb(&g_session,
-            video_sample_cb, video_ctx);
+                                           video_sample_cb, video_ctx);
         app_log("[APP] Video callback registered\n");
 
         ChiakiAudioSink audio_sink = audio_make_sink(audio_ctx);
@@ -1460,7 +1537,7 @@ int main(int argc, char *argv[])
                     // SDL_QUIT arrives when the user presses Home on webOS.
                     // Treat it as a deliberate exit — no reconnect.
                     app_log("[APP] SDL_QUIT received (Home button?) — exiting\n");
-                    g_should_exit   = true;
+                    g_should_exit = true;
                     g_session_ended = true;
                     break;
                 }
@@ -1468,11 +1545,11 @@ int main(int argc, char *argv[])
                 // All gamepad buttons are handled in input.c's evdev reader thread
                 // via EVIOCGRAB — the system never sees them.
                 if (ev.type == SDL_KEYDOWN &&
-                    (ev.key.keysym.sym == (SDL_Keycode)1073742094 ||  // WEBOS_KEY_BACK
+                    (ev.key.keysym.sym == (SDL_Keycode)1073742094 || // WEBOS_KEY_BACK
                      ev.key.keysym.sym == SDLK_ESCAPE))
                 {
                     app_log("[APP] Remote Back/Escape — exiting\n");
-                    g_should_exit   = true;
+                    g_should_exit = true;
                     g_session_ended = true;
                     break;
                 }
@@ -1488,20 +1565,19 @@ int main(int argc, char *argv[])
                 if (g_have_video_frame && (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP))
                 {
                     SDL_Keycode k = ev.key.keysym.sym;
-                    bool is_up = (k == SDLK_UP || (int)k == 1073741906);    // WEBOS_KEY_UP
+                    bool is_up = (k == SDLK_UP || (int)k == 1073741906); // WEBOS_KEY_UP
 
                     // Block ALL remote directional / navigation keys from
                     // reaching the PS5.  Gamepad D-pad is handled exclusively
                     // through the evdev reader thread in input.c.
-                    bool is_remote_nav = is_up
-                        || k == SDLK_DOWN   || (int)k == 1073741905   // WEBOS_KEY_DOWN
-                        || k == SDLK_LEFT   || (int)k == 1073741904   // WEBOS_KEY_LEFT
-                        || k == SDLK_RIGHT  || (int)k == 1073741903   // WEBOS_KEY_RIGHT
-                        || k == SDLK_RETURN || (int)k == 1073741912   // WEBOS_KEY_ENTER / OK
-                        || (int)k == 1073742093                        // WEBOS_KEY_RED
-                        || (int)k == 1073742089                        // WEBOS_KEY_GREEN
-                        || (int)k == 1073742090                        // WEBOS_KEY_YELLOW
-                        || (int)k == 1073742091;                       // WEBOS_KEY_BLUE
+                    bool is_remote_nav = is_up || k == SDLK_DOWN || (int)k == 1073741905 // WEBOS_KEY_DOWN
+                                         || k == SDLK_LEFT || (int)k == 1073741904       // WEBOS_KEY_LEFT
+                                         || k == SDLK_RIGHT || (int)k == 1073741903      // WEBOS_KEY_RIGHT
+                                         || k == SDLK_RETURN || (int)k == 1073741912     // WEBOS_KEY_ENTER / OK
+                                         || (int)k == 1073742093                         // WEBOS_KEY_RED
+                                         || (int)k == 1073742089                         // WEBOS_KEY_GREEN
+                                         || (int)k == 1073742090                         // WEBOS_KEY_YELLOW
+                                         || (int)k == 1073742091;                        // WEBOS_KEY_BLUE
 
                     if (is_remote_nav)
                     {
@@ -1549,8 +1625,8 @@ int main(int argc, char *argv[])
                     int lat_us = 0;
                     if (SS4S_PlayerGetVideoLatency(ss4s_player, 1000000, &lat_us))
                         atomic_store_explicit(&g_stream_stats.video_latency_ms,
-                                             (lat_us + 500) / 1000,
-                                             memory_order_relaxed);
+                                              (lat_us + 500) / 1000,
+                                              memory_order_relaxed);
                     else
                         atomic_store_explicit(&g_stream_stats.video_latency_ms, -1, memory_order_relaxed);
                 }
@@ -1576,15 +1652,55 @@ int main(int argc, char *argv[])
                 }
 
                 SDL_RenderPresent(g_renderer);
-                SDL_Delay(4);   // ~250Hz loop; keeps compositor alive without adding input latency
+
+                /* ── Precision frame pacer ────────────────────────────────── */
+                /* Instead of SDL_Delay(4) (~250Hz, ±10ms jitter), we use     */
+                /* clock_nanosleep with TIMER_ABSTIME to achieve a steady     */
+                /* ~250Hz (4ms) cadence with sub-ms accuracy.  This keeps the */
+                /* compositor alive and stats overlay smooth without adding    */
+                /* the 1-15ms jitter inherent in SDL_Delay on webOS.          */
+                {
+                    static struct timespec next_tick = {0, 0};
+                    struct timespec now;
+                    clock_gettime(CLOCK_MONOTONIC, &now);
+
+                    if (next_tick.tv_sec == 0 && next_tick.tv_nsec == 0)
+                    {
+                        /* First iteration — initialise the cadence. */
+                        next_tick = now;
+                    }
+
+                    /* Advance by 4ms (4,000,000 ns). */
+                    next_tick.tv_nsec += 4000000;
+                    if (next_tick.tv_nsec >= 1000000000)
+                    {
+                        next_tick.tv_nsec -= 1000000000;
+                        next_tick.tv_sec++;
+                    }
+
+                    /* If we're already past the target (overrun), just reset
+                     * to avoid spinning through a backlog of missed ticks. */
+                    int64_t ahead_ns = (int64_t)(next_tick.tv_sec - now.tv_sec) * 1000000000LL + (int64_t)(next_tick.tv_nsec - now.tv_nsec);
+                    if (ahead_ns < 0)
+                    {
+                        next_tick = now;
+                        next_tick.tv_nsec += 4000000;
+                        if (next_tick.tv_nsec >= 1000000000)
+                        {
+                            next_tick.tv_nsec -= 1000000000;
+                            next_tick.tv_sec++;
+                        }
+                    }
+
+                    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_tick, NULL);
+                }
             }
         }
 
         // ── Session teardown ──────────────────────────────────────────────────
         // Only send the sleep command if WE are the one exiting (Home button etc).
         // If the PS5 itself went to Rest Mode, it already sent the goodbye — skip it.
-        if (cfg.sleep_on_exit && g_should_exit
-            && !g_ps5_sleeping)
+        if (cfg.sleep_on_exit && g_should_exit && !g_ps5_sleeping)
         {
             app_log("[APP] Sending PS5 to rest mode\n");
             chiaki_session_goto_bed(&g_session);
@@ -1626,6 +1742,7 @@ cleanup_sdl:
 
     config_free(&cfg);
     curl_global_cleanup();
-    if (g_log_file) fclose(g_log_file);
+    if (g_log_file)
+        fclose(g_log_file);
     return 0;
 }
