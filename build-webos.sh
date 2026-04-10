@@ -115,7 +115,8 @@ build_opus() {
     fi
     pushd "$src"
     ./configure --host=arm-webos-linux-gnueabi --prefix="$OUR_STAGING" \
-        --enable-static --disable-shared --disable-doc --disable-extra-programs
+        --enable-static --disable-shared --disable-doc --disable-extra-programs \
+        --with-pic
     make -j"$NJOBS" && make install
     popd
 }
@@ -219,7 +220,9 @@ build_curl() {
         --disable-telnet --disable-tftp --disable-pop3 --disable-imap \
         --disable-smb --disable-smtp --disable-gopher --disable-mqtt \
         --disable-manual --disable-docs \
-        --without-libidn2 --without-librtmp --without-brotli --without-zstd
+        --without-libidn2 --without-librtmp --without-brotli --without-zstd \
+        CPPFLAGS="-I$OUR_STAGING/include" \
+        LDFLAGS="-L$OUR_STAGING/lib"
     make -j"$NJOBS" && make install
     popd
 }
@@ -331,11 +334,40 @@ build_jerasure() {
     echo "-- Jerasure built: ${#objects[@]} objects"
 }
 
+# ── libevent ─────────────────────────────────────────────────────────────────
+# Required by chiaki-ng's holepunch.c for PSN Remote Play session management.
+build_libevent() {
+    local ver="2.1.12"
+    local src="/tmp/libevent-${ver}-stable"
+    if [[ -f "$OUR_STAGING/lib/libevent.a" ]]; then
+        echo "-- libevent: skip"; return
+    fi
+    echo "-- Building libevent $ver"
+    if [[ ! -d "$src" ]]; then
+        wget -qO "/tmp/libevent-${ver}.tar.gz" \
+            "https://github.com/libevent/libevent/releases/download/release-${ver}-stable/libevent-${ver}-stable.tar.gz"
+        tar xf "/tmp/libevent-${ver}.tar.gz" -C /tmp
+    fi
+    pushd "$src"
+    ./configure \
+        --host=arm-webos-linux-gnueabi --prefix="$OUR_STAGING" \
+        --enable-static --disable-shared \
+        --disable-samples --disable-libevent-regress \
+        --disable-openssl \
+        CC="${CC}" \
+        CFLAGS="-fPIC" \
+        CPPFLAGS="-I$OUR_STAGING/include" \
+        LDFLAGS="-L$OUR_STAGING/lib"
+    make -j"$NJOBS" && make install
+    popd
+}
+
 build_openssl
 build_opus
 build_jsonc
 build_miniupnpc
 build_curl
+build_libevent
 build_gf_complete
 build_jerasure
 
