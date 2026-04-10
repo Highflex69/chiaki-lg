@@ -102,6 +102,20 @@ static int parse_qt_bytearray(const char *val, uint8_t *out, int max_out)
                 out[n++] = 0x22; p++;
             } else if (*p == '\\') {
                 out[n++] = 0x5c; p++;
+            } else if (*p == 'n') {
+                out[n++] = 0x0a; p++;
+            } else if (*p == 'r') {
+                out[n++] = 0x0d; p++;
+            } else if (*p == 't') {
+                out[n++] = 0x09; p++;
+            } else if (*p == 'a') {
+                out[n++] = 0x07; p++;
+            } else if (*p == 'b') {
+                out[n++] = 0x08; p++;
+            } else if (*p == 'f') {
+                out[n++] = 0x0c; p++;
+            } else if (*p == 'v') {
+                out[n++] = 0x0b; p++;
             } else {
                 /* Unknown escape — keep char after backslash */
                 out[n++] = (uint8_t)*p++;

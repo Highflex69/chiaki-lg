@@ -31,8 +31,13 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 # JSON-C
 pkg_check_modules(JSONC REQUIRED json-c)
 
-# OpenSSL (static)
-set(OPENSSL_ROOT_DIR "${WEBOS_STAGING_DIR}")
+# OpenSSL — use the SYSROOT's OpenSSL 1.1 for everything.
+# chiaki-ng's RP protocol (ECDH key exchange, RP-Auth HMAC) requires OpenSSL 1.1
+# behavior. OpenSSL 3.x produces different key material via the deprecated EC_KEY_*
+# API path, causing 403 Forbidden (80108bff) from the PS5.
+if(CMAKE_CROSSCOMPILING)
+    set(OPENSSL_ROOT_DIR "${CMAKE_SYSROOT}/usr")
+endif()
 set(OPENSSL_USE_STATIC_LIBS TRUE)
 find_package(OpenSSL REQUIRED)
 

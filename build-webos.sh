@@ -214,15 +214,15 @@ build_curl() {
     ./configure \
         --host=arm-webos-linux-gnueabi --prefix="$OUR_STAGING" \
         --enable-static --disable-shared \
-        --with-openssl="$OUR_STAGING" \
+        --with-openssl="$SYSROOT/usr" \
 		--enable-websockets \
         --disable-ldap --disable-ldaps --disable-rtsp --disable-dict \
         --disable-telnet --disable-tftp --disable-pop3 --disable-imap \
         --disable-smb --disable-smtp --disable-gopher --disable-mqtt \
         --disable-manual --disable-docs \
         --without-libidn2 --without-librtmp --without-brotli --without-zstd \
-        CPPFLAGS="-I$OUR_STAGING/include" \
-        LDFLAGS="-L$OUR_STAGING/lib"
+        CPPFLAGS="-I$SYSROOT/usr/include -I$OUR_STAGING/include" \
+        LDFLAGS="-L$SYSROOT/usr/lib -L$OUR_STAGING/lib"
     make -j"$NJOBS" && make install
     popd
 }
@@ -356,13 +356,14 @@ build_libevent() {
         --disable-openssl \
         CC="${CC}" \
         CFLAGS="-fPIC" \
-        CPPFLAGS="-I$OUR_STAGING/include" \
-        LDFLAGS="-L$OUR_STAGING/lib"
+        CPPFLAGS="-I$OUR_STAGING/include -I$SYSROOT/usr/include" \
+        LDFLAGS="-L$OUR_STAGING/lib -L$SYSROOT/usr/lib"
     make -j"$NJOBS" && make install
     popd
 }
 
-build_openssl
+# build_openssl — DISABLED: use the sysroot's OpenSSL 1.1 instead.
+# OpenSSL 3.x breaks chiaki-ng's RP-Auth HMAC (EC_KEY_* API behavioral change).
 build_opus
 build_jsonc
 build_miniupnpc
