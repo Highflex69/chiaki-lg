@@ -211,6 +211,7 @@ build_curl() {
         tar xf "/tmp/curl-$ver.tar.gz" -C /tmp
     fi
     pushd "$src"
+    CPPFLAGS="-I$OUR_STAGING/include" LDFLAGS="-L$OUR_STAGING/lib" \
     ./configure \
         --host=arm-webos-linux-gnueabi --prefix="$OUR_STAGING" \
         --enable-static --disable-shared \
@@ -371,6 +372,7 @@ build_curl
 build_libevent
 build_gf_complete
 build_jerasure
+build_libevent
 
 # ── Clone ss4s ────────────────────────────────────────────────────────────────
 SS4S_DIR="$SCRIPT_DIR/third-party/ss4s"
@@ -502,6 +504,21 @@ if grep -q 'pthread_clockjoin_np' "$THREAD_C" 2>/dev/null; then
     fi
 else
     echo "-- thread.c: no pthread_clockjoin_np (already patched or different version)"
+fi
+
+# aligned_alloc was added in glibc 2.16 but webOS's glibc may not export it.
+# Replace with posix_memalign which is universally available.
+COMMON_C="$CHIAKI_NG_DIR/lib/src/common.c"
+if grep -q 'return aligned_alloc' "$COMMON_C" 2>/dev/null; then
+    sed -i '/return aligned_alloc/c\	\tvoid *ptr = NULL; if(posix_memalign(\&ptr, alignment, size) != 0) return NULL; return ptr;' \
+        "$COMMON_C"
+    if grep -q 'posix_memalign' "$COMMON_C"; then
+        echo "-- common.c: patched aligned_alloc → posix_memalign"
+    else
+        echo "-- WARNING: aligned_alloc patch may have failed"
+    fi
+else
+    echo "-- common.c: no aligned_alloc (already patched or different version)"
 fi
 
 # ── Generate cmake toolchain extension ────────────────────────────────────────
